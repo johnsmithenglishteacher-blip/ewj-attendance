@@ -66,9 +66,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus{border-color:var(--ac
 .pill.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 </style>
 
-<!-- Firebase Realtime Database (compat CDN — works inside iframes) -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
 <script>
 (function(){
   const firebaseConfig = {
@@ -83,21 +81,7 @@ select:focus,input[type=text]:focus,input[type=date]:focus{border-color:var(--ac
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
-  // Wrap compat API to match the interface the main script expects
-  window._fb = {
-    db,
-    ref:     (db, path) => db.ref(path),
-    set:     (r, v)     => r.set(v),
-    get:     (r)        => r.once('value').then(s => ({ exists: ()=>s.exists(), val: ()=>s.val() })),
-    onValue: (r, cb)    => { r.on('value', snap => cb({ exists: ()=>snap.exists(), val: ()=>snap.val() })); },
-    push:    (r, v)     => r.push(v),
-    update:  (r, v)     => r.update(v),
-    remove:  (r)        => r.remove(),
-  };
-  window._fbReady = true;
-  window.dispatchEvent(new Event('fb-ready'));
-})();
-</script>
+  
 </head>
 <body>
 <div id="app">
@@ -151,51 +135,80 @@ function ce(cls,html=''){const d=document.createElement('div');d.className=cls;d
 function ctr(cls,txt){const s=document.createElement('span');s.className='ctr '+cls;s.textContent=txt;return s;}
 function badge(bg,col,txt,extra=''){const s=document.createElement('span');s.className='bdg';s.style.background=bg;s.style.color=col;if(extra)s.style.border=extra;s.textContent=txt;return s;}
 
-// ── Storage (Firebase Realtime Database + localStorage fallback) ──────────
-// localStorage is still used for PIN, session, and active-teacher (device-local)
-// Everything else (records, schedule, hours) lives in Firebase = shared across devices
+// ── Storage (Firebase REST API + localStorage) ───────────────────────────
+// No SDK needed — Firebase's REST API works with plain fetch() in any browser/iframe
+// localStorage = PIN, session, active-teacher (device-local only)
+// Firebase = records, schedule, hours (shared across all devices in real time)
+
+const FB_URL = 'https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
 
 function lsGet(k,fb){try{const v=localStorage.getItem(k);return v?JSON.parse(v):fb;}catch(e){return fb;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 
-// Firebase path helpers
+// Map storage keys to Firebase REST paths
 function fbPath(k){
-  // Map storage keys to Firebase paths
-  const map = {
-    'ewj-records':  'records',
-    'ewj-schedule': 'schedule',
-    'ewj-hours':    'hours',
-  };
-  return map[k] || null;
+  const map={'ewj-records':'records','ewj-schedule':'schedule','ewj-hours':'hours'};
+  return map[k]||null;
 }
 
+// Read from Firebase
 async function fbGet(k, fallback){
-  const path = fbPath(k);
-  if(!path || !window._fb) return lsGet(k, fallback);
+  const path=fbPath(k);
+  if(!path) return lsGet(k, fallback);
   try {
-    const snap = await window._fb.get(window._fb.ref(window._fb.db, path));
-    return snap.exists() ? snap.val() : fallback;
-  } catch(e){ return lsGet(k, fallback); }
+    const res = await fetch(`${FB_URL}/${path}.json`);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    if(data === null) return fallback;
+    return Array.isArray(data) ? data : Object.values(data);
+  } catch(e){
+    console.warn('Firebase read failed, using localStorage:', e.message);
+    return lsGet(k, fallback);
+  }
 }
 
+// Write to Firebase
 async function fbSet(k, v){
-  const path = fbPath(k);
-  if(!path || !window._fb){ lsSet(k,v); return; }
+  const path=fbPath(k);
+  if(!path){ lsSet(k,v); return; }
   try {
-    await window._fb.set(window._fb.ref(window._fb.db, path), v);
-    lsSet(k, v); // keep local copy in sync as cache
-  } catch(e){ lsSet(k,v); }
+    const res = await fetch(`${FB_URL}/${path}.json`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(v)
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    lsSet(k, v); // keep local cache in sync
+  } catch(e){
+    console.warn('Firebase write failed, using localStorage:', e.message);
+    lsSet(k, v);
+  }
 }
 
-// Subscribe to real-time updates from Firebase
-// Calls cb(value) whenever the data at key changes on any device
+// Real-time subscription using Firebase Server-Sent Events (SSE)
+// Calls cb(value) whenever data changes on ANY device
 function fbSubscribe(k, cb){
-  const path = fbPath(k);
-  if(!path || !window._fb) return;
-  window._fb.onValue(window._fb.ref(window._fb.db, path), snap => {
-    const val = snap.exists() ? snap.val() : null;
-    if(val !== null) cb(val);
-  });
+  const path=fbPath(k);
+  if(!path) return;
+  try {
+    const es = new EventSource(`${FB_URL}/${path}.json`, {withCredentials:false});
+    es.addEventListener('put', e => {
+      try {
+        const msg = JSON.parse(e.data);
+        const val = msg.data;
+        if(val !== null){
+          const arr = Array.isArray(val) ? val : Object.values(val);
+          cb(arr);
+        }
+      } catch(err){ console.warn('SSE parse error:', err); }
+    });
+    es.onerror = () => {
+      // SSE reconnects automatically — no action needed
+    };
+    return es;
+  } catch(e){
+    console.warn('SSE not available:', e);
+  }
 }
 
 
@@ -450,7 +463,7 @@ async function submitReg(){
 }
 
 function exportCSV(){
-  const rows=[['Setmana','Date','Hora enviament','Professor','Dia','Hora classe','Curs','Alumne','Estat','Nota','Comentari classe','Hora comentari','Flag']];
+  const rows=[['Week','Date','Hora enviament','Professor','Dia','Hora classe','Curs','Alumne','Estat','Nota','Class comment','Hora comment','Flag']];
   state.records.forEach(r=>r.students.forEach(s=>rows.push([r.week,r.date,r.submittedAt||'',r.teacher,r.day,r.time,r.course,s.name,s.status,s.note,r.comment||'',r.commentAt||'',s.flag||''])));
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='assistencia_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
@@ -478,13 +491,13 @@ function renderRegister(){
     if(absent.filter(n=>reg.flags[n]!=='dropped').length||late.length||drops.length||reg.added.length){
       const det=document.createElement('div');det.style.cssText='background:#fff;border-radius:8px;padding:9px 12px;margin-top:10px;text-align:left;font-size:13px;';
       if(absent.filter(n=>reg.flags[n]!=='dropped').length)det.innerHTML+='<div><strong>Absents:</strong> '+absent.filter(n=>reg.flags[n]!=='dropped').join(', ')+'</div>';
-      if(late.length)det.innerHTML+='<div><strong>Retards:</strong> '+late.join(', ')+'</div>';
+      if(late.length)det.innerHTML+='<div><strong>Lates:</strong> '+late.join(', ')+'</div>';
       if(drops.length)det.innerHTML+='<div style="color:#b91c1c;margin-top:3px"><strong>Dropouts:</strong> '+drops.join(', ')+'</div>';
       if(reg.added.length)det.innerHTML+='<div style="color:#15803d;margin-top:3px"><strong>Nous:</strong> '+reg.added.join(', ')+'</div>';
       d.appendChild(det);
     }
     const tip=document.createElement('div');tip.style.cssText='background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:8px 12px;margin-top:9px;font-size:13px;color:#854d0e;';
-    tip.innerHTML='✏️ Afegeix on comentari des de <strong>History</strong> tab whenever you like.';d.appendChild(tip);
+    tip.innerHTML='✏️ Afegeix on comment des de <strong>History</strong> tab whenever you like.';d.appendChild(tip);
     const btns=document.createElement('div');btns.style.cssText='display:flex;gap:8px;justify-content:center;margin-top:13px;flex-wrap:wrap;';
     const nb=document.createElement('button');nb.className='pill';nb.textContent='New register';nb.onclick=()=>{reg.slotIdx=null;reg.submitted=false;reg.editingId=null;renderRegister();};btns.appendChild(nb);
     if(state.records.length){const cb=document.createElement('button');cb.className='pill on';cb.textContent='↓ CSV';cb.onclick=exportCSV;btns.appendChild(cb);}
@@ -567,7 +580,7 @@ function renderRegister(){
       const nm=document.createElement('span');nm.className='stu-name';nm.textContent=n;top.appendChild(nm);
       if(ta>0&&!isD){const ab=document.createElement('span');ab.className='absbdg';ab.textContent=ta+'A';top.appendChild(ab);}
       if(isD){const bl=document.createElement('span');bl.style.cssText='font-size:11px;color:#b91c1c;flex-shrink:0;';bl.textContent='left';top.appendChild(bl);}
-      const fb=document.createElement('button');fb.className='fb'+(isD?' dropped':isN?' newstu':'');fb.style.marginLeft='auto';fb.textContent=isD?'↩':isN?'✕':'Baixa';
+      const fb=document.createElement('button');fb.className='fb'+(isD?' dropped':isN?' newstu':'');fb.style.marginLeft='auto';fb.textContent=isD?'↩':isN?'✕':'Drop';
       fb.onclick=()=>isD||isN?clearFlag(n):setFlag(n,'dropped');top.appendChild(fb);
       row.appendChild(top);
       const bot=document.createElement('div');bot.className='stu-bot';
@@ -591,12 +604,12 @@ function renderRegister(){
     const addBtn=document.createElement('button');addBtn.className='add-btn';addBtn.textContent='+ Add';addBtn.onclick=addStudent;addRow.appendChild(addBtn);wrap.appendChild(addRow);
 
     // Submit
-    const sub=document.createElement('button');sub.className='submit-btn';sub.textContent=(reg.editingId?'Actualitzar':'Desar')+' record →';sub.onclick=submitReg;wrap.appendChild(sub);
+    const sub=document.createElement('button');sub.className='submit-btn';sub.textContent=(reg.editingId?'Update':'Save')+' record →';sub.onclick=submitReg;wrap.appendChild(sub);
   }
 }
 
 // ── Log tab ───────────────────────────────────────────────────────────────
-const logState={search:'',editing:null,draft:'',expanded:null};
+const logState={search:'',editing:null,draft:'',expanded:null,editingStudents:null};
 
 function renderLog(){
   const wrap=document.getElementById('tab-log');wrap.innerHTML='';
@@ -623,7 +636,7 @@ function renderLog(){
   const csvBtn=document.createElement('button');csvBtn.style.cssText='margin-left:auto;border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;padding:6px 12px;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;color:#64748b;';csvBtn.textContent='↓ CSV';csvBtn.onclick=exportCSV;hdr.appendChild(csvBtn);
   wrap.appendChild(hdr);
 
-  if(!state.records.length){wrap.innerHTML+='<div style="text-align:center;padding:40px;color:#94a3b8;font-size:14px;">Cap record desat encara.</div>';return;}
+  if(!state.records.length){wrap.innerHTML+='<div style="text-align:center;padding:40px;color:#94a3b8;font-size:14px;">No records saved yet.</div>';return;}
 
   recs.forEach(r=>{
     const nA=r.students.filter(s=>s.status==='absent'&&s.flag!=='dropped').length;
@@ -730,6 +743,65 @@ function renderLog(){
       cb.onclick=()=>{logState.editing=r.id;logState.draft=r.comment||'';logState.expanded=null;renderLog();};
       btnWrap.appendChild(cb);card.appendChild(btnWrap);
     }
+
+    // ── Admin controls (delete register + edit students) ─────────────
+    if(!at){
+      const adminBar=document.createElement('div');
+      adminBar.style.cssText='display:flex;align-items:center;gap:8px;padding:7px 13px;background:#fef9c3;border-top:1px solid #fde047;';
+      const adminLbl=document.createElement('span');adminLbl.style.cssText='font-size:11px;font-weight:600;color:#854d0e;flex:1;';adminLbl.textContent='Admin';adminBar.appendChild(adminLbl);
+
+      // Edit students button
+      const editStuBtn=document.createElement('button');
+      editStuBtn.style.cssText='border:1.5px solid #86efac;background:#fff;border-radius:7px;padding:4px 10px;font-size:11px;font-family:inherit;cursor:pointer;color:#15803d;font-weight:600;';
+      editStuBtn.textContent='✏️ Edit students';
+      editStuBtn.onclick=()=>{logState.editingStudents=logState.editingStudents===r.id?null:r.id;renderLog();};
+      adminBar.appendChild(editStuBtn);
+
+      // Delete register button
+      const delRegBtn=document.createElement('button');
+      delRegBtn.style.cssText='border:1.5px solid #fca5a5;background:#fff;border-radius:7px;padding:4px 10px;font-size:11px;font-family:inherit;cursor:pointer;color:#dc2626;font-weight:600;';
+      delRegBtn.textContent='🗑 Delete';
+      delRegBtn.onclick=async()=>{
+        if(!confirm('Delete register for '+r.teacher+' — '+r.course+' on '+r.date+'?')) return;
+        const upd=state.records.filter(rec=>rec.id!==r.id);
+        await saveRecords(upd);renderLog();
+      };
+      adminBar.appendChild(delRegBtn);
+      card.appendChild(adminBar);
+
+      // Student editor panel
+      if(logState.editingStudents===r.id){
+        const stuEdit=document.createElement('div');
+        stuEdit.style.cssText='padding:10px 13px;border-top:1px solid #f1f5f9;background:#f8fafc;';
+        const stuTitle=document.createElement('div');stuTitle.style.cssText='font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;';stuTitle.textContent='Edit student statuses';stuEdit.appendChild(stuTitle);
+        r.students.forEach((s,si)=>{
+          const row=document.createElement('div');
+          row.style.cssText='display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px;flex-wrap:wrap;';
+          const nm=document.createElement('span');nm.style.cssText='flex:1;min-width:100px;font-weight:500;font-size:12px;';nm.textContent=s.name;row.appendChild(nm);
+          // Status
+          const stSel=document.createElement('select');stSel.style.cssText='padding:4px 7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit;background:#fff;';
+          ['present','absent','late','dropped'].forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;if(v===s.status)o.selected=true;stSel.appendChild(o);});
+          // Flag
+          const flSel=document.createElement('select');flSel.style.cssText='padding:4px 7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit;background:#fff;';
+          [['','—'],['new','New'],['dropped','Drop']].forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if(v===(s.flag||''))o.selected=true;flSel.appendChild(o);});
+          // Note
+          const nIn=document.createElement('input');nIn.type='text';nIn.value=s.note||'';nIn.placeholder='note…';nIn.style.cssText='width:80px;padding:4px 7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit;';
+          // Save
+          const svBtn=document.createElement('button');svBtn.style.cssText='border:none;border-radius:6px;background:#4f46e5;color:#fff;padding:4px 10px;font-size:11px;font-family:inherit;font-weight:700;cursor:pointer;white-space:nowrap;';svBtn.textContent='Save';
+          svBtn.onclick=async()=>{
+            const upd=state.records.map(rec=>{
+              if(rec.id!==r.id)return rec;
+              const ns=[...rec.students];ns[si]={...ns[si],status:stSel.value,flag:flSel.value,note:nIn.value};
+              return{...rec,students:ns};
+            });
+            await saveRecords(upd);logState.editingStudents=null;renderLog();
+          };
+          row.appendChild(stSel);row.appendChild(flSel);row.appendChild(nIn);row.appendChild(svBtn);stuEdit.appendChild(row);
+        });
+        const doneBtn=document.createElement('button');doneBtn.className='pill';doneBtn.style.marginTop='8px';doneBtn.textContent='Done';doneBtn.onclick=()=>{logState.editingStudents=null;renderLog();};stuEdit.appendChild(doneBtn);
+        card.appendChild(stuEdit);
+      }
+    }
     wrap.appendChild(card);
   });
 }
@@ -805,7 +877,7 @@ function renderManage(){
   const pendCount=Object.values(manState.pending).reduce((a,p)=>a+(p.newTeacher?1:0)+Object.keys(p.moves||{}).length,0);
   if(pendCount>0){
     const pb=document.createElement('div');pb.style.cssText='background:#fef9c3;border:1.5px solid #fde047;border-radius:10px;padding:9px 13px;margin-bottom:11px;display:flex;align-items:center;gap:9px;';
-    pb.innerHTML='<span style="font-size:13px;font-weight:600;color:#854d0e;flex:1;">'+pendCount+' canvi'+(pendCount!==1?'s':'')+' pendent'+(pendCount!==1?'s':'')+'</span>';
+    pb.innerHTML='<span style="font-size:13px;font-weight:600;color:#854d0e;flex:1;">'+pendCount+' canvi'+(pendCount!==1?'s':'')+' pending'+(pendCount!==1?'s':'')+'</span>';
     const applyBtn=document.createElement('button');applyBtn.style.cssText='background:#15803d;color:#fff;border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-family:inherit;font-weight:700;cursor:pointer;';applyBtn.textContent='Apply';applyBtn.onclick=applyManage;pb.appendChild(applyBtn);
     const discardBtn=document.createElement('button');discardBtn.style.cssText='border:none;background:none;color:#854d0e;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;';discardBtn.textContent='Discard';discardBtn.onclick=()=>{manState.pending={};renderManage();};pb.appendChild(discardBtn);
     wrap.appendChild(pb);
@@ -826,7 +898,7 @@ function renderManage(){
     hdr.innerHTML='<span style="font-weight:700;font-size:13px;">'+s.day+' '+s.time+'</span>';
     hdr.appendChild(badge(lv.bg,lv.col,s.course));hdr.appendChild(badge(cp.bg,cp.col,s.students.length));
     hdr.innerHTML+='<span style="font-size:12px;color:#64748b;">'+s.teacher+'</span>';
-    if(hasPend){hdr.innerHTML+='<span style="font-size:10px;background:#fef9c3;color:#854d0e;padding:2px 7px;border-radius:20px;font-weight:700;margin-left:auto;">pendent</span>';}
+    if(hasPend){hdr.innerHTML+='<span style="font-size:10px;background:#fef9c3;color:#854d0e;padding:2px 7px;border-radius:20px;font-weight:700;margin-left:auto;">pending</span>';}
     hdr.innerHTML+='<span style="margin-left:'+(hasPend?'0':'auto')+';color:#94a3b8;font-size:11px;display:inline-block;transform:'+(isOpen?'rotate(180deg)':'none')+';transition:transform .2s;">▼</span>';
     hdr.onclick=()=>{manState.expanded=isOpen?null:key;renderManage();};
     card.appendChild(hdr);
@@ -1139,24 +1211,7 @@ function renderAll(){
 }
 
 // Boot — wait for Firebase SDK then load data
-function startApp(){
-  if(window._fbReady){
-    bootFromFirebase();
-  } else {
-    window.addEventListener('fb-ready', bootFromFirebase, {once:true});
-    // Fallback: if Firebase doesn't load in 4s, boot from localStorage
-    setTimeout(()=>{
-      if(!state.loaded){
-        console.warn('Firebase timeout — using localStorage');
-        state.loaded = true;
-        state.hours = lsGet('ewj-hours',[]);
-        buildAppShell();
-        renderAll();
-      }
-    }, 8000);
-  }
-}
-startApp();
+
 </script>
 </body>
 </html>
