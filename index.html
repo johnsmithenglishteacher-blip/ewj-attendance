@@ -2,6 +2,8 @@
 <html lang="ca">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Attendance Register – English with John</title>
 <style>
@@ -76,23 +78,23 @@ select:focus,input[type=text]:focus,input[type=date]:focus{border-color:var(--ac
 </head>
 <body>
 <div id="app">
-
+ 
 <!-- Loading state — replaced by buildAppShell() after Firebase loads -->
 <div style="text-align:center;padding:60px 20px;color:#94a3b8;font-size:14px;">
   <div style="font-size:32px;margin-bottom:12px;">📋</div>
   Connecting…
 </div>
-
+ 
 </div>
 <script>
 // ── Schedule data ─────────────────────────────────────────────────────────
 const BASE_SCHEDULE = [{"teacher":"Anna","day":"Monday","time":"16:15","course":"PET INT","students":["Iu Nadal","Marti Burgues","Berta Puy","Youssef Rami"]},{"teacher":"Anna","day":"Monday","time":"17:15","course":"2P","students":["Mei Nadal","Emma Angerri","Mateo Iulian","Roc Exposito"]},{"teacher":"Anna","day":"Monday","time":"18:15","course":"4P","students":["Liam Crespo","Ona Gomez","Jaume Salse","Ousmane Sabaly","Robert Soare"]},{"teacher":"Anna","day":"Monday","time":"19:15","course":"PET INT","students":["Elia Bernet","Mariona Bravo","Laia Esteve","Jordi Molins"]},{"teacher":"Anna","day":"Tuesday","time":"16:15","course":"KEY A2","students":["Valeri Guanipa","Kamila Ardila Paredes","Airan Morillas","Isabela Tabares","Ricardo Jinete","Montse Nadal"]},{"teacher":"Anna","day":"Tuesday","time":"17:15","course":"4P","students":["Vinyet Coma","Rim Gari","Santi Diaz","Carla Membrive"]},{"teacher":"Anna","day":"Tuesday","time":"18:15","course":"5P","students":["Ivet Subira","Ares Figuerol","Eric Borrella","Sauc Leon","Lia Fondevila"]},{"teacher":"Anna","day":"Tuesday","time":"19:15","course":"PET INT","students":["Marti Mallat","Roc Llaurado"]},{"teacher":"Anna","day":"Wednesday","time":"16:15","course":"FCE 2","students":["Marti Pedra"]},{"teacher":"Anna","day":"Wednesday","time":"17:15","course":"6P","students":["Ares Castella Prats","Aina Angerri","Pau Francesc Forns","Marwa Bouazoun","Claudia Saiz"]},{"teacher":"Anna","day":"Wednesday","time":"18:15","course":"FCE INT","students":["Mario Torres","Abril Gili","Raul Palau","Marc Betbese","Nora Gou","Marc Biel"]},{"teacher":"Anna","day":"Wednesday","time":"19:15","course":"CAE INT","students":["Ariadna Marquez","Laia Cerezuela","Adam Snoussi","Marti Antonijuan","Malak Karkouri","Marcel Boliart"]},{"teacher":"Anna","day":"Thursday","time":"15:15","course":"PET INT ONLINE","students":["Joel Puig"]},{"teacher":"Anna","day":"Thursday","time":"16:15","course":"CAE 1","students":["Izaskun Ferrer","Pol Puig","Joel Farre","Laura Espuñes","Angel Caumons","Cristina Sanchez","Abril Caufape","Blai Terre"]},{"teacher":"Anna","day":"Thursday","time":"17:15","course":"FCE 2","students":["Jana Cases","Berta Pijuan","Jana Profitos","Julia Sabata","Laia Merino","Mireia Viladrich","Blanca Duran","Ares Castella","Saba El Allouch","Mariona Marques"]},{"teacher":"Anna","day":"Thursday","time":"18:15","course":"PET 1","students":["Vinyet Baldoma","Eric Vilaseca","Biel Gutierrez","Olau Burgues"]},{"teacher":"Anna","day":"Thursday","time":"19:15","course":"FCE INT ONLINE","students":["Guillem Puig"]},{"teacher":"Anna","day":"Friday","time":"15:15","course":"PET 2","students":["Eduard Vilarasau","Mariona Sole","Aina Subirada","Ona Garcia"]},{"teacher":"Anna","day":"Friday","time":"16:15","course":"FCE INT","students":["Jan Montoliu","Lluc Del Barrio","Jan Molins","Marti Profitos","Blanca Pique","Adria Garcia","Nicole Howard","Adria Martin"]},{"teacher":"Anna","day":"Friday","time":"17:15","course":"3P","students":["Bet Pujol","Natalia Lucic","Arlet Corsa","Artur Sturk","Nadia Galito","Cezara Francu"]},{"teacher":"Anna","day":"Friday","time":"18:15","course":"5P","students":["Abril Del Rio","Luciano Escola","Mustafa Gillani"]},{"teacher":"Anna","day":"Friday","time":"19:15","course":"FCE INTENSIVE","students":["Laia Pascual","Alba Muray","Dylan Sanchez","Julia Sabata"]},{"teacher":"Carolina","day":"Monday","time":"17:15","course":"PET 1","students":["Samuel Alej. Sanchez","Otjer Planes","Nil Fargues"]},{"teacher":"Carolina","day":"Monday","time":"18:15","course":"FCE 1","students":["Emilia Lorena Cozac","Julia Rosell","Alejandra Guanipa","Txell Companys"]},{"teacher":"Chaymae","day":"Monday","time":"16:15","course":"CAE INT","students":["Laura Pique","Eric Sole","Cristina Sanchez","Julia Bellart"]},{"teacher":"Chaymae","day":"Monday","time":"17:15","course":"1P","students":["Pau Clariso","Mateo Serra"]},{"teacher":"Chaymae","day":"Monday","time":"18:15","course":"2P","students":["Marta Pujol","Joan Subirada","Ginna Clop","Unai Mora"]},{"teacher":"Chaymae","day":"Tuesday","time":"16:15","course":"CAE INT","students":["Carla Escola","Angel Caumons","Izaskun Ferrer","Pol Puig","Laura Espunes","Noa Roma","Joan Barri"]},{"teacher":"Chaymae","day":"Tuesday","time":"17:15","course":"FCE INT","students":["Jana Cases","Berta Pijuan","Jana Profitos","Ferran Quintilla","Max Dominguez","Mali Jimenez","Lluc Fillat","Lia Camats"]},{"teacher":"Chaymae","day":"Tuesday","time":"18:15","course":"PET INT","students":["Maria Navarro","Marti Mallat","Roc Llaurado","Eric Vilaseca","Jordi Pascual","Ona Mestres"]},{"teacher":"Chaymae","day":"Tuesday","time":"19:15","course":"FCE 1","students":["Marc Ortiz","Andres Felipe","Nerea Castella","Adria Garcia","Dylan Sanchez"]},{"teacher":"Chaymae","day":"Wednesday","time":"16:15","course":"PET INTENSIVE","students":["Natalia Prim","Valeria Guillen","Ona Nieto","Naia Lacal"]},{"teacher":"Chaymae","day":"Wednesday","time":"17:15","course":"1P","students":["Triana Rey","Roc Sarret","Sali Mballo"]},{"teacher":"Chaymae","day":"Wednesday","time":"18:15","course":"4P","students":["Andres Aguilo","Elia Vendrell","Sara Laalamat","Joan Escriba"]},{"teacher":"Chaymae","day":"Wednesday","time":"19:15","course":"FCE 1","students":["Paula Guillaumet","Raul Palau","Paula Corbacho","Marc Biel"]},{"teacher":"Chaymae","day":"Thursday","time":"16:15","course":"CAE 2","students":["Adria Burgues","Genis Balaguero","Oriol Viola","Iu Viola"]},{"teacher":"Chaymae","day":"Thursday","time":"17:15","course":"3P","students":["Txell Sarret","Jan Almellon","Jan Nadal","Hugo Carrera","Valeria Isabela Gines","Martina Gutierrez"]},{"teacher":"Chaymae","day":"Thursday","time":"18:15","course":"3P","students":["Roc Torreguitar","Queralt Bernaus","Gina Diagne","Eric Tico"]},{"teacher":"Chaymae","day":"Thursday","time":"19:15","course":"CAE INT","students":["Pau Biel","Pol Mas","Iu Viola","Alex Serrano"]},{"teacher":"Chaymae","day":"Friday","time":"15:15","course":"CAE 1","students":["Noa Roma"]},{"teacher":"Chaymae","day":"Friday","time":"16:15","course":"CAE INT","students":["Bruna Barquin","Ander Dima","Mar Vilarasau","Aran Martin","Adria Tarros","Blai Terre"]},{"teacher":"Chaymae","day":"Friday","time":"17:15","course":"FCE INT","students":["Abril Rosell"]},{"teacher":"Chaymae","day":"Friday","time":"18:15","course":"6P","students":["Paula Mallat"]},{"teacher":"Clara","day":"Monday","time":"16:15","course":"CAE 1","students":["Jana Burgues","Ander Dima","Carla Solans","Paula Segura","Abril Aznar"]},{"teacher":"Clara","day":"Monday","time":"17:15","course":"FCE 1","students":["Mario Torres","Guillem Daviu","Arnau Tahull","Roc Campo","Abril Gili"]},{"teacher":"Clara","day":"Monday","time":"18:15","course":"CAE 1","students":["Carla Escola","Xenia Rodenas","Pau Biel","Joan Barri","Alex Serrano","Valentina Escriba"]},{"teacher":"Clara","day":"Monday","time":"19:15","course":"6P","students":["Olaf Hernandez"]},{"teacher":"Clara","day":"Tuesday","time":"16:15","course":"FCE 1","students":["Abril Rosell","Martina Escola","Julia Pedra","Onia Colilles","Mariona Sanchez","Guillem Corral","Zoe Sierra","Alex Gomez"]},{"teacher":"Clara","day":"Tuesday","time":"17:15","course":"KINDER 1","students":["Arlet Perera","Gala Pujol","Bru Torra","Cesc Ricart","Victoria Quiroga"]},{"teacher":"Clara","day":"Tuesday","time":"18:15","course":"KINDER 2","students":["Ariadna Sole","Carmen Nieto","Elena Mira","Biel Freixes","Quim Torreguitart","Biel Castillo"]},{"teacher":"Clara","day":"Tuesday","time":"19:15","course":"PET 2 ONLINE","students":["Joel Puig"]},{"teacher":"Clara","day":"Wednesday","time":"16:15","course":"KEY A2","students":["Valeri Guanipa","Kamila Ardila Paredes","Airan Morillas","Isabela Tabares","Ricardo Jinete","Montse Nadal"]},{"teacher":"Clara","day":"Wednesday","time":"17:15","course":"4P","students":["Yanira Bello","Kevin Bello","Jan Castillo","Julia Perera","Bruna Gutierrez","Aina Retres","Martin Gonzales"]},{"teacher":"Clara","day":"Wednesday","time":"18:15","course":"PET INT","students":["Jordi Bernaus","Ainhoa Salse","Elisabet Palomares"]},{"teacher":"Clara","day":"Wednesday","time":"19:15","course":"PET INT","students":["Jordi Villaro","Oriol Visa","Laia Torres","Ivan Molins"]},{"teacher":"Clara","day":"Thursday","time":"16:15","course":"FCE INT","students":["Onia Colilles","Bernat Jordana","Nerea Castella","Guillem Daviu","Guillem Corral","Alex Gomez"]},{"teacher":"Clara","day":"Thursday","time":"17:15","course":"KINDER 2","students":["Marc Semis","Claudia Sangra","Daniela Mauri","Naia Tribo","Sergi Baro","Marc Baro"]},{"teacher":"Clara","day":"Thursday","time":"18:15","course":"4P","students":["Elena Ramal","Elena Morales","Dani Rubio","Africa Vancell","Queralt Parrot","Jofre Estudillo","Maike Lin"]},{"teacher":"Clara","day":"Thursday","time":"19:15","course":"FCE INT","students":["Julia Rosell","Marc Ortiz","Arlet Caufape","Andres Felipe","Arnau Tahull"]},{"teacher":"Clara","day":"Friday","time":"15:15","course":"FCE 2 ONLINE","students":["Guillem Puig"]},{"teacher":"Clara","day":"Friday","time":"16:15","course":"CAE 2","students":["Laura Pique","Eric Sole","Anna Sole","Marcel Boliart","Malak Karkouri","Marti Antonijuan"]},{"teacher":"Clara","day":"Friday","time":"17:15","course":"6P","students":["Aleix Rosell","Marc Sanahuja","Roger Vendrell","Aina Corsa","Mariona Curia","Mohammadou Sabaly","Emily Juliana Lopez"]},{"teacher":"Clara","day":"Friday","time":"18:15","course":"PET 2","students":["Laia Torres","Pol Corsa"]},{"teacher":"Ferran","day":"Monday","time":"17:15","course":"5P","students":["Juno Nadal","Maria Samper","Blanca Ferrer","Arlet Cuellas"]},{"teacher":"Ferran","day":"Monday","time":"18:15","course":"5P","students":["Pere Pujol","Pau Serrano","Noelia Rosell","Unai Martinez","Anouar Charradi"]},{"teacher":"Ferran","day":"Tuesday","time":"17:15","course":"6P","students":["Marti Paul","Rut Gensana","Claudia Guerrero","Martina Paniagua","Max Nieto","Arlet Castro","Enric Bosch","Zoe Campo"]},{"teacher":"Ferran","day":"Wednesday","time":"17:15","course":"PET INTENSIVE","students":["Samuel Alej. Sanchez","Pol Sangra","Lluc Sangra","Eric Sole Patoi","Carlota Cerezuela","Rut Forns","Marc Querol","Mario Nimas","Nil Fargues"]},{"teacher":"Ferran","day":"Thursday","time":"17:15","course":"6P","students":["Marti Torres","Ona Farreny","Andrea Valero","Aina Aran","Martina Semis","Berta Companys","Chris Mihesan"]},{"teacher":"Ferran","day":"Thursday","time":"18:15","course":"6P","students":["Gerard Ramells","Alex Rubio","Derek Torres","Ferran Collado","Isma Ndaye","Pau Fontanet","Eric Moles"]},{"teacher":"Ferran","day":"Friday","time":"16:15","course":"CPE 1","students":["Daniel Caumons","Edgar Ortiz","Joan Ortiz"]},{"teacher":"Ferran","day":"Friday","time":"17:15","course":"5P","students":["Jan Carbonell","Elia Pujol","Mariona Maluquer","David Caumons"]},{"teacher":"John","day":"Monday","time":"16:15","course":"FCE 2","students":["Blanca Pique","Xavi Subirada","Arnau Jordana","Lluc Del Barrio","Roger Camps","Yasmine Echchat","Martina Bellart","Joan Miquel Espinoza","Arnau Queral","Pol Castellanos","Julia Guell"]},{"teacher":"John","day":"Monday","time":"17:15","course":"PET 2","students":["Iu Nadal","Nelson Pirela","Carlota Cerezuela","Leonardo Mera","Mario Nimas","Berta Puy"]},{"teacher":"John","day":"Monday","time":"18:15","course":"FCE 2","students":["Jan Montoliu","Jan Molins","Emma Minguell","Alex Pijuan","Aleix Perez","Paula Fortuny","Mariona Paniagua","Nicole Howard","Nil Bernet","Adria Martin","Jofre Pons"]},{"teacher":"John","day":"Monday","time":"19:15","course":"ADULT 1","students":["Marta Coma","Raul Puertas","Joel Baron","Sergi Perez","Anna Serra","Esther Figuera","Lorena Pujol","Laura Pujol"]},{"teacher":"John","day":"Tuesday","time":"16:15","course":"PET 1","students":["Marti Burgues","Naia Lacal","Youssef Rami"]},{"teacher":"John","day":"Tuesday","time":"17:15","course":"1P","students":["Gerio Paul","Guiu Torra","Kai Gari","Quim Ricart"]},{"teacher":"John","day":"Tuesday","time":"18:15","course":"FCE INT","students":["Aina Camats","Claudia Bravo","Pau Roca","Bet Pensado","Eran Leon","Abril Caufape","Salvador Farre","Ferran Calvet","Pol Burgues","Mariona Marques"]},{"teacher":"John","day":"Tuesday","time":"19:15","course":"CPE 1","students":["Aurembiaix Cabezas","Alex Giralt","Oriol Pujol"]},{"teacher":"John","day":"Wednesday","time":"16:15","course":"CAE INTENSIVE","students":["Xenia Rodenas","Adria Burgues","Paula Segura","Ona Pons","Valentina Escriba","Abril Aznar","Genis Balaguero","Gerard Mases","Carla Solans","Jana Burgues"]},{"teacher":"John","day":"Wednesday","time":"17:15","course":"6P","students":["Valeria Mauri","Nora Esteban","Laia Betbese","Ian Mayoral","Hugo Molina","Carla Gasol","Ona Planes","Aba Mballo"]},{"teacher":"John","day":"Wednesday","time":"18:15","course":"FCE INT","students":["Aleix Perez","Paula Fortuny","Laia Merino","Emilia Lorena Cozac","Mariona Paniagua","Paula Corbacho","Saba El Allouch","Joan Orteu"]},{"teacher":"John","day":"Wednesday","time":"19:15","course":"ADULT 2","students":["Ernest Villaro","Mireia Marimon","Montse Sole","Silvia Manchon","Miquel Guell","Dorita Solans","Josep Maria Gallego","Rosa Pujol"]},{"teacher":"John","day":"Thursday","time":"16:15","course":"CPE INTENSIVE","students":["Daniel Caumons","Joan Ortiz","Edgar Ortiz","Pol Sanagustin"]},{"teacher":"John","day":"Thursday","time":"17:15","course":"1P + 2P","students":["Carmen Valero","Maria Martin","Akram Charradi","Adriana Castellano","Arnau Torres","Axel Diaz","Damian Dyonis","Blau Baciu"]},{"teacher":"John","day":"Thursday","time":"18:15","course":"STEAM","students":["Ot Baldoma"]},{"teacher":"John","day":"Thursday","time":"19:15","course":"FCE INT","students":["Andres Felipe","Arlet Caufape","Arnau Tahull","Julia Rosell","Marc Ortiz"]},{"teacher":"John","day":"Friday","time":"15:15","course":"PET 1","students":["Pol Romiguer","Ona Pujol","Marina Lucic","Domenec Serret","Martina Vila"]},{"teacher":"John","day":"Friday","time":"16:15","course":"PET INT","students":["Aina Barquin","Aina Subirada","Biel Baldoma","Domenec Serret","Laia Montoliu","Marina Lucic","Martina Vila","Ona Garcia","Ona Pujol","Pol Romiguer","Souadi"]},{"teacher":"John","day":"Friday","time":"17:15","course":"CAE 1","students":["Adria Tarros","Aran Martin","Laia Cerezuela","Laia Sadi"]},{"teacher":"John","day":"Friday","time":"18:15","course":"STEAM","students":["David Caumons","Elena Morales","Elia Pujol","Marc Sanahuja","Marti Paul","Marwa Bouazouni","Roger Vendrell","Siraj Skhoun"]},{"teacher":"John","day":"Friday","time":"19:15","course":"CAE 1","students":["Alexia Gese","Annia Camats","Clara Ros","Laura Martinez","Marina Cardenes","Pol Mas","Sergi Martinez"]},{"teacher":"Mary","day":"Monday","time":"16:15","course":"FCE 1","students":["Marc Segura","Berta Canelles","Adria Aguila","Bernat Jordana","Alba Oms","Paula Oms"]},{"teacher":"Mary","day":"Monday","time":"17:15","course":"4P","students":["Valeria Gomez","Jana Mirada","Felipe Mera","Marcal Tejedor"]},{"teacher":"Mary","day":"Monday","time":"18:15","course":"PET 1","students":["Laia Montoliu","Ainhoa Salse","Elia Bernet","Jordi Bernaus","Yosra Souadi"]},{"teacher":"Mary","day":"Monday","time":"19:15","course":"CAE 1","students":["Bruna Barquin","Cristina Aleu","Ariadna Marquez","Adam Snoussi","Ferran Mena"]},{"teacher":"Mary","day":"Tuesday","time":"16:15","course":"FCE INT","students":["Marti Pedra","Roger Camps","Ot Vidal","Guerau Vidal","Joel Menchon"]},{"teacher":"Mary","day":"Tuesday","time":"17:15","course":"FCE 2","students":["Aina Camats","Alba Muray","Pau Roca","Arlet Caufape","Marti Profitos","Eran Leon","Pol Burgues","Ferran Calvet","Bet Pensado"]},{"teacher":"Mary","day":"Tuesday","time":"18:15","course":"PET 1","students":["Lia Camats","Tell Leon"]},{"teacher":"Mary","day":"Tuesday","time":"19:15","course":"CAE INT","students":["Cristina Aleu","Anna Sole","Ferran Mena","Roger Quintilla"]},{"teacher":"Mary","day":"Wednesday","time":"16:15","course":"FCE INT","students":["Nil Bernet","Xavi Subirada","Jofre Pons","Yasmine Echchat","Roc Campo","Joan Miquel Espinoza","Alex Pijuan"]},{"teacher":"Mary","day":"Wednesday","time":"17:15","course":"2P","students":["Marti Castella","David Mayoral","Jan Esteban","Claudia Mestres","Leo Molina","Valeria Fonte","Chloe Amaro","Vanessa Maria Coc"]},{"teacher":"Mary","day":"Wednesday","time":"18:15","course":"PET 2","students":["Pol Sangra","Lluc Sangra","Eric Sole Patoi","Jordi Villaro","Oriol Visa","Mariona Bravo","Rut Forns","Jordi Pascual","Aina Barquin","Ivan Molins"]},{"teacher":"Mary","day":"Wednesday","time":"19:15","course":"FCE INT","students":["Alejandra Guanipa","Txell Companys","Tula Llena","Blanca Duran"]},{"teacher":"Mary","day":"Thursday","time":"16:15","course":"FCE INT","students":["Julia Pedra","Adria Aguila","Ona Terre","Arnau Jordana","Mariona Sanchez","Alba Oms","Marc Segura","Paula Oms","Zoe Sierra","Berta Canelles","Arnau Queral","Pol Castellanos"]},{"teacher":"Mary","day":"Thursday","time":"17:15","course":"PET INTENSIVE","students":["Vinyet Baldoma","Clara Tejedor","Kenia Jimenez","Jordi Torres","Mariona Sole","Amy Diagne","Arnau Collado","Josep Viladrich","Biel Gutierrez","Yasmine Boz","Olau Burgues"]},{"teacher":"Mary","day":"Thursday","time":"18:15","course":"PET 2","students":["Maria Navarro","Amy Diagne","Yasmine Boz","Arnau Collado","Josep Viladrich","Laia Esteve","Jordi Molins","Marc Querol"]},{"teacher":"Mary","day":"Thursday","time":"19:15","course":"CPE INT","students":["Aurembiaix Cabezas","Jordi Almuzara"]},{"teacher":"Mary","day":"Friday","time":"15:15","course":"FCE INT","students":["Ares Castella","Raul Felix","Mariona Tomas","Txell Alcove","Carla Martinez","Berta Boliart"]},{"teacher":"Mary","day":"Friday","time":"16:15","course":"PET INT","students":["Biel Baldoma","Aina Barquin","Pol Romiguer","Ona Pujol","Marina Lucic","Laia Montoliu","Martina Vila","Domenec Serret","Aina Subirada","Ona Garcia","Souadi"]},{"teacher":"Mary","day":"Friday","time":"17:15","course":"PET INTENSIVE","students":["Pol Corsa","Nelson Pirela","Leonardo Mera","Tell Leon"]},{"teacher":"Mary","day":"Friday","time":"18:15","course":"CAE INT","students":["Laia Sadi","Annia Camats","Clara Ros","Alexia Gese","Marina Cardenes","Sergi Martinez","Laura Martinez"]},{"teacher":"Mireia","day":"Monday","time":"16:15","course":"PET 1","students":["Natalia Prim","Valeria Guillen","Ona Nieto","Joan Brusau","Biel Baldoma"]},{"teacher":"Mireia","day":"Monday","time":"17:15","course":"3P","students":["Alexia Vila","Adam Leffashel","Gerard Curia","Biel Romiguer"]},{"teacher":"Mireia","day":"Monday","time":"18:15","course":"KINDER 2","students":["Ona Crespo","Theo Carrera","Neizan Fernandez"]},{"teacher":"Mireia","day":"Tuesday","time":"16:15","course":"CAE EXAM PREP","students":["Ona Pons"]},{"teacher":"Mireia","day":"Tuesday","time":"17:15","course":"2P","students":["Aniol Paul","Arnau Perello","Leo Lacal","Nil Baldoma"]},{"teacher":"Mireia","day":"Tuesday","time":"18:15","course":"3P","students":["Abel Guillen","Izan Sanchez","Guerau Coll","Griselda Coll","Abraham Guanipa","India Reixachs"]},{"teacher":"Mireia","day":"Wednesday","time":"17:15","course":"KINDER 2","students":["Ricardo Rey","Jordina Gutierrez","Tanit Boher","Jana Candeas","Naia Saez","Rebeca Del Aguila","Teo Jimenez"]},{"teacher":"Mireia","day":"Wednesday","time":"18:15","course":"2P","students":["Nil Aguilo","Marti Bravo","Iker Agea"]},{"teacher":"Mireia","day":"Wednesday","time":"19:15","course":"FCE 2","students":["Laia Pascual","Jana Estruch","Joan Orteu"]},{"teacher":"Mireia","day":"Thursday","time":"17:15","course":"5P","students":["Anna Sole Patoi","Bruna Trullols","Siraj Skhoun","Arlet Baciu","Yassir Boz"]},{"teacher":"Mireia","day":"Thursday","time":"18:15","course":"FCE INT","students":["Mireia Viladrich"]},{"teacher":"Mireia","day":"Thursday","time":"19:15","course":"FCE 2","students":["Raul Felix","Mariona Tomas","Txell Alcove","Carla Martinez","Julia Blanch"]},{"teacher":"Mireia","day":"Friday","time":"15:15","course":"FCE 1","students":["Marc Betbese","Ferran Quintilla","Max Dominguez","Lluc Fillat"]},{"teacher":"Mireia","day":"Friday","time":"16:15","course":"FCE 2","students":["Guerau Vidal","Ona Terre","Ot Vidal"]},{"teacher":"Mireia","day":"Friday","time":"17:15","course":"1P","students":["Genis Galito","Oriol Castellano"]},{"teacher":"Mireia","day":"Friday","time":"18:15","course":"1P","students":["Benjamin Escola","Mia Castro Paredes"]}];
-
+ 
 const TEACHERS=["Anna","Chaymae","Clara","Ferran","John","Mary","Mireia"];
 const DAYS=["Monday","Tuesday","Wednesday","Thursday","Friday"];
 const DAY_ORDER={Monday:0,Tuesday:1,Wednesday:2,Thursday:3,Friday:4};
 const CHIPS=["Good dynamics","Very engaged","Low engagement","Exam revision needed","Good progress","Homework not done","Technical issues","Topic covered"];
-
+ 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function slotKey(s){return s.teacher+'|'+s.day+'|'+s.time+'|'+s.course;}
 function lvColor(c){
@@ -125,24 +127,24 @@ function el(tag,attrs,children){
 function ce(cls,html=''){const d=document.createElement('div');d.className=cls;d.innerHTML=html;return d;}
 function ctr(cls,txt){const s=document.createElement('span');s.className='ctr '+cls;s.textContent=txt;return s;}
 function badge(bg,col,txt,extra=''){const s=document.createElement('span');s.className='bdg';s.style.background=bg;s.style.color=col;if(extra)s.style.border=extra;s.textContent=txt;return s;}
-
+ 
 // ── Storage (Firebase REST API + localStorage) ───────────────────────────
 // No SDK needed — Firebase's REST API works with plain fetch() in any browser/iframe
 // localStorage = PIN, session, active-teacher (device-local only)
 // Firebase = records, schedule, hours (shared across all devices in real time)
-
+ 
 const FB_URL = 'https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
 const SHEETS_URL = ''; // paste your Apps Script Web App URL here
-
+ 
 function lsGet(k,fb){try{const v=localStorage.getItem(k);return v?JSON.parse(v):fb;}catch(e){return fb;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-
+ 
 // Map storage keys to Firebase REST paths
 function fbPath(k){
   const map={'ewj-records':'records','ewj-schedule':'schedule','ewj-hours':'hours','ewj-messages':'messages'};
   return map[k]||null;
 }
-
+ 
 // Read from Firebase (5s timeout)
 async function fbGet(k, fallback){
   const path=fbPath(k);
@@ -160,7 +162,7 @@ async function fbGet(k, fallback){
     return arr.length?arr:fallback;
   } catch(e){ console.warn('FB read failed:',e.message); return lsGet(k,fallback); }
 }
-
+ 
 // Write to Firebase — each record written individually to prevent overwrites
 async function fbSet(k, v){
   const path=fbPath(k);
@@ -185,17 +187,17 @@ async function fbSet(k, v){
     }
   } catch(e){ console.warn('FB write failed:',e.message); }
 }
-
+ 
 // Delete a single record from Firebase
 async function fbDeleteRecord(id){
   try {
     await fetch(FB_URL+'/records/r'+id+'.json',{method:'DELETE'});
   } catch(e){ console.warn('FB delete failed:',e.message); }
 }
-
+ 
 // Delete a single record from Firebase by ID
-
-
+ 
+ 
 // Real-time subscription using Firebase Server-Sent Events (SSE)
 // Calls cb(value) whenever data changes on ANY device
 function fbSubscribe(k, cb){
@@ -221,12 +223,12 @@ function fbSubscribe(k, cb){
     console.warn('SSE not available:', e);
   }
 }
-
-
+ 
+ 
 // ── Admin password ────────────────────────────────────────────────────────
 const ADMIN_PIN_KEY = 'ewj-admin-pin';
 const ADMIN_SESSION_KEY = 'ewj-admin-session';
-
+ 
 function getAdminPin(){return lsGet(ADMIN_PIN_KEY, null);}
 function setAdminPin(pin){lsSet(ADMIN_PIN_KEY, pin);}
 function isAdminSessionActive(){
@@ -237,7 +239,7 @@ function isAdminSessionActive(){
 }
 function startAdminSession(){lsSet(ADMIN_SESSION_KEY, Date.now());}
 function clearAdminSession(){localStorage.removeItem(ADMIN_SESSION_KEY);}
-
+ 
 function promptAdminAccess(onSuccess){
   const pin = getAdminPin();
   if(!pin){
@@ -257,11 +259,11 @@ function promptAdminAccess(onSuccess){
   if(entered.trim() === pin){ startAdminSession(); onSuccess(); }
   else { alert('Incorrect PIN.'); }
 }
-
+ 
 // ── Write lock — suppresses SSE updates briefly after local writes ──────────
 let _writeLock=false;
 function acquireWriteLock(){_writeLock=true;setTimeout(()=>{_writeLock=false;},5000);}
-
+ 
 // ── App state ─────────────────────────────────────────────────────────────
 const state={
   tab:'register',
@@ -273,11 +275,11 @@ const state={
   activeTeacher: lsGet('ewj-active-teacher',''),
   loaded: false,
 };
-
+ 
 // Boot: load from Firebase then subscribe to live updates
 async function bootFromFirebase(){
   document.getElementById('app').innerHTML = '<div style="text-align:center;padding:60px 20px;color:#94a3b8;font-size:14px;"><div style="font-size:32px;margin-bottom:12px;">📋</div>Loading…</div>';
-
+ 
   // Load all data in parallel including feedback
   const [fbRecords, fbSchedule, fbHours, fbMessages] = await Promise.all([
     fbGet('ewj-records',   []),
@@ -287,7 +289,7 @@ async function bootFromFirebase(){
   ]);
   // Load feedback separately (non-blocking)
   loadFeedback().catch(e=>console.warn('Feedback load failed:',e));
-
+ 
   const rawRecords = Array.isArray(fbRecords) ? fbRecords : Object.values(fbRecords || {});
   const cleanRecords = rawRecords.filter(r=>r&&r.id).sort((a,b)=>(a.id||0)-(b.id||0));
   state.records = cleanRecords.length ? cleanRecords : lsGet('ewj-records', []);
@@ -297,15 +299,15 @@ async function bootFromFirebase(){
   state.messages = rawMsgs.length ? rawMsgs : lsGet('ewj-messages',[]);
   mergeFeedbackIntoRecords(); // merge feedback into records
   state.loaded   = true;
-
+ 
   // Re-build the app shell
   buildAppShell();
   renderAll();
-
+ 
   // Show live indicator
   const ld=document.getElementById('live-dot');
   if(ld){ld.style.display='inline';ld.style.color='#16a34a';ld.textContent='● Live';}
-
+ 
   // Subscribe to live updates — re-render when any device changes data
   // Poll records every 30 seconds instead of SSE (more reliable)
   setInterval(async()=>{
@@ -320,17 +322,17 @@ async function bootFromFirebase(){
       else renderTabBar();
     } catch(e){}
   }, 30000);
-
+ 
   fbSubscribe('ewj-schedule', val => {
     const arr = Array.isArray(val) ? val : Object.values(val || {});
     state.schedule = arr;
     lsSet('ewj-schedule', arr);
     if(state.tab==='register'||state.tab==='manage') renderAll();
   });
-
+ 
   // Subscribe to feedback changes
   fbSubscribe_feedback();
-
+ 
   fbSubscribe('ewj-messages', val => {
     if(_writeLock){console.log('Messages SSE suppressed during write');return;}
     const arr = Array.isArray(val) ? val : Object.values(val || {});
@@ -338,7 +340,7 @@ async function bootFromFirebase(){
     if(state.tab==='messages') renderMessages();
     else renderTabBar();
   });
-
+ 
   fbSubscribe('ewj-hours', val => {
     const arr = Array.isArray(val) ? val : Object.values(val || {});
     state.hours = arr;
@@ -346,7 +348,7 @@ async function bootFromFirebase(){
     if(state.tab==='hours') renderHours();
   });
 }
-
+ 
 function absMap(weeks4=false){
   const m={};
   const tw=weekNum(new Date());
@@ -361,13 +363,13 @@ function absMap(weeks4=false){
   });
   return m;
 }
-
+ 
 function showFlash(msg){
   const f=document.getElementById('flash');
   f.textContent=msg;f.style.display='block';
   setTimeout(()=>{f.style.display='none';},2500);
 }
-
+ 
 async function saveSchedule(s){state.schedule=s;await fbSet('ewj-schedule',s);showFlash('✓ Saved');}
 async function saveRecords(r){
   acquireWriteLock(); // suppress SSE for 3s after write
@@ -377,7 +379,7 @@ async function saveRecords(r){
   await fbSet('ewj-records',r);
 }
 function saveTeacher(t){state.activeTeacher=t;lsSet('ewj-active-teacher',t);}
-
+ 
 // ── Build app shell (called after Firebase loads) ─────────────────────────
 function buildAppShell(){
   document.getElementById('app').innerHTML = 
@@ -385,7 +387,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2025&#8211;26 &nbsp;<span style="color:#86efac;font-size:10px;">v7.1</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2025&#8211;26 &nbsp;<span style="color:#86efac;font-size:10px;">v8.0</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -402,7 +404,7 @@ function buildAppShell(){
     +'<div id="tab-hours" style="display:none;"></div>'
     +'<div id="tab-messages" style="display:none;"></div>';
 }
-
+ 
 // ── Render teacher chips ──────────────────────────────────────────────────
 function renderTeacherChips(){
   const wrap=document.getElementById('teacher-chips');
@@ -423,7 +425,7 @@ function renderTeacherChips(){
     wrap.appendChild(b);
   });
 }
-
+ 
 // ── Tab bar ───────────────────────────────────────────────────────────────
 function renderTabBar(){
   const bar=document.getElementById('tab-bar');
@@ -448,7 +450,7 @@ function renderTabBar(){
     bar.appendChild(b);
   });
 }
-
+ 
 // ── Register tab ──────────────────────────────────────────────────────────
 const reg={
   teacher:'', dateVal:todayISO(), slotIdx:null,
@@ -456,18 +458,18 @@ const reg={
   newName:'', submitted:false, editingId:null,
   planningMode:false, planningTime:'', planningNote:''
 };
-
+ 
 function getDay(dateVal){return DAYS[Math.min(new Date(dateVal+'T12:00:00').getDay()-1,4)]||'Monday';}
 function getWeek(dateVal){return weekNum(new Date(dateVal+'T12:00:00'));}
 function getDateStr(dateVal){return fmtD(new Date(dateVal+'T12:00:00'));}
-
+ 
 function getSlots(){
   const tname=state.activeTeacher||reg.teacher;
   const day=getDay(reg.dateVal);
   return state.schedule.filter(s=>s.day===day&&(!tname||s.teacher===tname))
     .sort((a,b)=>a.time.localeCompare(b.time)||a.teacher.localeCompare(b.teacher));
 }
-
+ 
 function pickSlot(i){
   reg.slotIdx=i;reg.submitted=false;
   const s=getSlots()[i];
@@ -482,7 +484,7 @@ function pickSlot(i){
     reg.status=st;reg.flags={};reg.notes={};reg.added=[];reg.editingId=null;
   }
 }
-
+ 
 function setStu(n,v){
   reg.status[n]=v;
   if(v==='present')delete reg.notes[n];
@@ -511,7 +513,7 @@ function getAllStu(){
   const s=getSlots()[reg.slotIdx];
   return s?[...s.students,...reg.added]:[];
 }
-
+ 
 async function submitReg(){
   const now=new Date();
   const s=getSlots()[reg.slotIdx];
@@ -530,7 +532,7 @@ async function submitReg(){
   }
   reg.submitted=true;renderRegister();renderTabBar();
 }
-
+ 
 function exportCSV(filteredRecs){
   const rows=[['Week','Date','Time sent','Teacher','Day','Class time','Course','Student','Status','Note','Class comment','Comment time','Flag']];
   const source=filteredRecs||state.records;
@@ -538,7 +540,7 @@ function exportCSV(filteredRecs){
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='assistencia_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 }
-
+ 
 function renderRegister(){
   const wrap=document.getElementById('tab-register');
   wrap.innerHTML='';
@@ -547,7 +549,7 @@ function renderRegister(){
   const slots=getSlots();
   const slot=reg.slotIdx!==null?slots[reg.slotIdx]:null;
   const day=getDay(reg.dateVal),dateStr=getDateStr(reg.dateVal),week=getWeek(reg.dateVal);
-
+ 
   // Success screen
   if(reg.submitted&&slot){
     const allStu=getAllStu();
@@ -573,7 +575,7 @@ function renderRegister(){
     if(state.records.length){const cb=document.createElement('button');cb.className='pill on';cb.textContent='↓ CSV';cb.onclick=exportCSV;btns.appendChild(cb);}
     d.appendChild(btns);wrap.appendChild(d);return;
   }
-
+ 
   // Step 1: date + teacher
   const card1=ce('card');
   const dateDiv=document.createElement('div');dateDiv.style.marginBottom='10px';
@@ -601,7 +603,7 @@ function renderRegister(){
     tDiv.appendChild(sel);card1.appendChild(tDiv);
   }
   wrap.appendChild(card1);
-
+ 
   // Step 2: slot list
   if(tname){
     const slotLabel=ce('lbl','Class');wrap.appendChild(slotLabel);
@@ -623,7 +625,7 @@ function renderRegister(){
       });
     }
   }
-
+ 
   // Planning hour button — shown below slot list
   if(tname&&!reg.planningMode&&!reg.submitted){
     const planBtn=document.createElement('button');
@@ -632,7 +634,7 @@ function renderRegister(){
     planBtn.onclick=()=>{reg.planningMode=true;reg.slotIdx=null;reg.submitted=false;renderRegister();};
     wrap.appendChild(planBtn);
   }
-
+ 
   // Planning hour form
   if(reg.planningMode&&tname&&!reg.submitted){
     const pBanner=document.createElement('div');
@@ -640,19 +642,19 @@ function renderRegister(){
     pBanner.innerHTML='<div style="font-weight:700;font-size:15px;color:#3730a3;">&#128203; Planning Hour</div>'
       +'<div style="font-size:12px;color:#4f46e5;margin-top:2px;">'+(state.activeTeacher||reg.teacher)+' &middot; '+day+' &middot; '+getDateStr(reg.dateVal)+'</div>';
     wrap.appendChild(pBanner);
-
+ 
     const timeDiv=document.createElement('div');timeDiv.style.marginBottom='10px';
     timeDiv.innerHTML='<div class="lbl">Time slot</div>';
     const timeIn=document.createElement('input');timeIn.type='text';timeIn.placeholder='e.g. 16:15';timeIn.value=reg.planningTime;
     timeIn.oninput=e=>{reg.planningTime=e.target.value;};
     timeDiv.appendChild(timeIn);wrap.appendChild(timeDiv);
-
+ 
     const noteDiv=document.createElement('div');noteDiv.style.marginBottom='12px';
     noteDiv.innerHTML='<div class="lbl">Note (optional)</div>';
     const noteIn=document.createElement('input');noteIn.type='text';noteIn.placeholder='e.g. PET 1 exam prep, CAE materials...';noteIn.value=reg.planningNote;
     noteIn.oninput=e=>{reg.planningNote=e.target.value;};
     noteDiv.appendChild(noteIn);wrap.appendChild(noteDiv);
-
+ 
     const btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:8px;';
     const saveBtn=document.createElement('button');saveBtn.className='submit-btn';saveBtn.style.flex='1';saveBtn.style.marginTop='0';saveBtn.textContent='Save planning hour';
     saveBtn.onclick=async()=>{
@@ -675,23 +677,23 @@ function renderRegister(){
     cancelBtn.onclick=()=>{reg.planningMode=false;renderRegister();};
     btnRow.appendChild(saveBtn);btnRow.appendChild(cancelBtn);wrap.appendChild(btnRow);
   }
-
+ 
   // Step 3: attendance form
   if(slot&&!reg.submitted){
     const allStu=getAllStu();
     const absent=allStu.filter(n=>reg.flags[n]==='dropped'||reg.status[n]==='absent');
     const late=allStu.filter(n=>reg.status[n]==='late'&&reg.flags[n]!=='dropped');
     const present=allStu.filter(n=>!['absent','late'].includes(reg.status[n])&&reg.flags[n]!=='dropped');
-
+ 
     if(reg.editingId){
       const eb=document.createElement('div');eb.style.cssText='background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:9px;padding:9px 12px;margin-bottom:10px;font-size:13px;color:#1d4ed8;margin-top:12px;';
       eb.textContent='✏️ Editing existing record';wrap.appendChild(eb);
     }
-
+ 
     const banner=document.createElement('div');banner.style.cssText='background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:10px;padding:10px 12px;margin-bottom:11px;margin-top:12px;';
     banner.innerHTML='<div style="font-weight:700;font-size:15px;color:#3730a3">'+slot.course+'</div><div style="font-size:12px;color:#4f46e5;margin-top:2px">'+slot.teacher+' · '+day+' '+slot.time+' · '+dateStr+'</div>';
     wrap.appendChild(banner);
-
+ 
     // Quick actions bar
     const actBar=document.createElement('div');actBar.style.cssText='display:flex;align-items:center;gap:7px;margin-bottom:10px;flex-wrap:wrap;';
     const allPBtn=document.createElement('button');allPBtn.className='sb p on';allPBtn.style.cssText='border-radius:8px;padding:6px 12px;';allPBtn.textContent='✓ All present';
@@ -701,7 +703,7 @@ function renderRegister(){
     if(absent.filter(n=>reg.flags[n]!=='dropped').length)ctrDiv.appendChild(ctr('a',absent.filter(n=>reg.flags[n]!=='dropped').length+'A'));
     if(late.length)ctrDiv.appendChild(ctr('l',late.length+'L'));
     actBar.appendChild(ctrDiv);wrap.appendChild(actBar);
-
+ 
     // Student rows
     allStu.forEach(n=>{
       const s=reg.status[n]||'present',f=reg.flags[n]||'';
@@ -739,21 +741,21 @@ function renderRegister(){
       }
       row.appendChild(bot);wrap.appendChild(row);
     });
-
+ 
     // Add student
     const addRow=document.createElement('div');addRow.className='add-row';
     const addIn=document.createElement('input');addIn.type='text';addIn.placeholder='Add new student…';addIn.value=reg.newName;
     addIn.oninput=e=>{reg.newName=e.target.value;};addIn.onkeydown=e=>{if(e.key==='Enter')addStudent();};addRow.appendChild(addIn);
     const addBtn=document.createElement('button');addBtn.className='add-btn';addBtn.textContent='+ Add';addBtn.onclick=addStudent;addRow.appendChild(addBtn);wrap.appendChild(addRow);
-
+ 
     // Submit
     const sub=document.createElement('button');sub.className='submit-btn';sub.textContent=(reg.editingId?'Update':'Save')+' register →';sub.onclick=submitReg;wrap.appendChild(sub);
   }
 }
-
+ 
 // ── Log tab ───────────────────────────────────────────────────────────────
 const logState={search:'',editing:null,draft:'',expanded:null,editingStudents:null,filterTeacher:'',filterDay:'',filterWeek:''};
-
+ 
 function renderLog(){
   const wrap=document.getElementById('tab-log');wrap.innerHTML='';
   const at=state.activeTeacher;
@@ -768,18 +770,18 @@ function renderLog(){
   }
   recs.sort((a,b)=>{const tc=a.teacher.localeCompare(b.teacher);return tc!==0?tc:b.id-a.id;});
   const pending=state.records.filter(r=>!r.commentDone&&(!at||r.teacher===at)).length;
-
+ 
   // Search + header
   const sRow=document.createElement('div');sRow.style.cssText='display:flex;gap:8px;margin-bottom:10px;';
   const sIn=document.createElement('input');sIn.type='text';sIn.placeholder='Search student, teacher, class…';sIn.value=logState.search;sIn.style.flex='1';sIn.style.padding='8px 11px';sIn.style.fontSize='13px';
   sIn.oninput=e=>{logState.search=e.target.value;renderLog();};sRow.appendChild(sIn);
   if(logState.search){const clr=document.createElement('button');clr.className='pill';clr.textContent='✕';clr.onclick=()=>{logState.search='';renderLog();};sRow.appendChild(clr);}
   wrap.appendChild(sRow);
-
+ 
   // ── Filter bar ───────────────────────────────────────────────────────
   const filterBar=document.createElement('div');
   filterBar.style.cssText='display:grid;grid-template-columns:'+(at?'1fr 1fr':'1fr 1fr 1fr')+';gap:7px;margin-bottom:10px;';
-
+ 
   // Teacher filter (admin only)
   if(!at){
     const tDiv=document.createElement('div');
@@ -788,14 +790,14 @@ function renderLog(){
     tSel.onchange=e=>{logState.filterTeacher=e.target.value;renderLog();};
     tDiv.appendChild(tSel);filterBar.appendChild(tDiv);
   }
-
+ 
   // Day filter
   const dDiv=document.createElement('div');
   const dSel=document.createElement('select');dSel.style.cssText='width:100%;padding:7px 9px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:inherit;background:#fff;outline:none;';
   dSel.innerHTML='<option value="">All days</option>'+DAYS.map(d=>'<option'+(d===logState.filterDay?' selected':'')+'>'+d+'</option>').join('');
   dSel.onchange=e=>{logState.filterDay=e.target.value;renderLog();};
   dDiv.appendChild(dSel);filterBar.appendChild(dDiv);
-
+ 
   // Week filter — build from existing records
   const weeks=[...new Set(state.records.map(r=>r.week).filter(Boolean))].sort((a,b)=>{
     const na=parseInt(a.replace('Week ','')),nb=parseInt(b.replace('Week ',''));return nb-na;
@@ -805,9 +807,9 @@ function renderLog(){
   wSel.innerHTML='<option value="">All weeks</option>'+weeks.map(w=>'<option'+(w===logState.filterWeek?' selected':'')+'>'+w+'</option>').join('');
   wSel.onchange=e=>{logState.filterWeek=e.target.value;renderLog();};
   wDiv.appendChild(wSel);filterBar.appendChild(wDiv);
-
+ 
   wrap.appendChild(filterBar);
-
+ 
   // Note for teachers
   if(at){
     const note=document.createElement('div');
@@ -815,7 +817,7 @@ function renderLog(){
     note.textContent='Showing your records only. Use Day and Week filters to narrow down.';
     wrap.appendChild(note);
   }
-
+ 
   // Active filters summary + clear button
   const activeFilters=[logState.filterTeacher,logState.filterDay,logState.filterWeek].filter(Boolean);
   if(activeFilters.length){
@@ -827,15 +829,15 @@ function renderLog(){
     clrAll.onclick=()=>{logState.filterTeacher='';logState.filterDay='';logState.filterWeek='';renderLog();};
     clearRow.appendChild(clrAll);wrap.appendChild(clearRow);
   }
-
+ 
   const hdr=document.createElement('div');hdr.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:12px;';
   hdr.innerHTML='<span style="font-size:13px;color:#64748b">'+recs.length+' record'+(recs.length!==1?'s':'')+'</span>';
   if(pending>0){const pb=document.createElement('span');pb.style.cssText='background:#fef9c3;color:#854d0e;border:1px solid #fde047;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:700;';pb.textContent='✏️ '+pending+' without comment';hdr.appendChild(pb);}
   const csvBtn=document.createElement('button');csvBtn.style.cssText='margin-left:auto;border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;padding:6px 12px;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;color:#64748b;';csvBtn.textContent='↓ CSV'+(activeFilters.length?' (filtered)':'');csvBtn.onclick=()=>exportCSV(recs);hdr.appendChild(csvBtn);
   wrap.appendChild(hdr);
-
+ 
   if(!state.records.length){wrap.innerHTML+='<div style="text-align:center;padding:40px;color:#94a3b8;font-size:14px;">No records saved yet.</div>';return;}
-
+ 
   // Student profile view — if search matches a single student, show their summary
   if(logState.search.trim().length>=2){
     const q=logState.search.toLowerCase().trim();
@@ -861,18 +863,18 @@ function renderLog(){
       wrap.appendChild(profile);
     }
   }
-
+ 
   recs.forEach(r=>{
     const nA=r.students.filter(s=>s.status==='absent'&&s.flag!=='dropped').length;
     const nL=r.students.filter(s=>s.status==='late').length;
     const nNew=r.students.filter(s=>s.flag==='new').length;
     const nDrop=r.students.filter(s=>s.flag==='dropped').length;
     const isEd=logState.editing===r.id,isEx=logState.expanded===r.id;
-
+ 
     const isPlanning=!!r.isPlanning;
     const card=document.createElement('div');card.className='log-card';
     if(isPlanning)card.style.cssText='border:1.5px solid #c7d2fe;border-radius:11px;margin-bottom:8px;overflow:hidden;background:#eef2ff;';
-
+ 
     // Header row
     const hdrRow=document.createElement('div');hdrRow.style.cssText='display:flex;align-items:flex-start;gap:8px;padding:10px 13px;cursor:pointer;';
     const info=document.createElement('div');info.style.cssText='flex:1;min-width:0;';
@@ -890,13 +892,13 @@ function renderLog(){
     hdrRow.appendChild(badges);
     hdrRow.onclick=()=>{if(!isEd){logState.expanded=isEx?null:r.id;renderLog();}};
     card.appendChild(hdrRow);
-
+ 
     // Comment display
     if(!isEd&&r.comment){
       const cd=document.createElement('div');cd.style.cssText='padding:0 13px 0;font-size:13px;color:#475569;border-top:1px solid #f1f5f9;padding-top:7px;';
       cd.innerHTML='<span style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-right:5px;">Comment</span>'+r.comment;
       card.appendChild(cd);
-
+ 
       // Admin feedback
       const at_=state.activeTeacher;
       if(at_===''){
@@ -969,7 +971,7 @@ function renderLog(){
         if(isUnread){const upd=state.records.map(rec=>rec.id===r.id?{...rec,adminFeedbackRead:true}:rec);saveRecords(upd);}
       }
     }
-
+ 
     // Expanded detail
     if(isEx&&!isEd){
       const det=document.createElement('div');det.style.cssText='border-top:1px solid #f1f5f9;padding:7px 13px 9px;';
@@ -987,7 +989,7 @@ function renderLog(){
       });}
       card.appendChild(det);
     }
-
+ 
     // Comment editor or button
     if(isEd){
       const ed=document.createElement('div');ed.style.cssText='border-top:1.5px solid #c7d2fe;background:#eef2ff;padding:11px 13px;';
@@ -1013,20 +1015,20 @@ function renderLog(){
       cb.onclick=()=>{logState.editing=r.id;logState.draft=r.comment||'';logState.expanded=null;renderLog();};
       btnWrap.appendChild(cb);card.appendChild(btnWrap);
     }
-
+ 
     // ── Admin controls (delete register + edit students) ─────────────
     if(!at){
       const adminBar=document.createElement('div');
       adminBar.style.cssText='display:flex;align-items:center;gap:8px;padding:7px 13px;background:#fef9c3;border-top:1px solid #fde047;';
       const adminLbl=document.createElement('span');adminLbl.style.cssText='font-size:11px;font-weight:600;color:#854d0e;flex:1;';adminLbl.textContent='Admin';adminBar.appendChild(adminLbl);
-
+ 
       // Edit students button
       const editStuBtn=document.createElement('button');
       editStuBtn.style.cssText='border:1.5px solid #86efac;background:#fff;border-radius:7px;padding:4px 10px;font-size:11px;font-family:inherit;cursor:pointer;color:#15803d;font-weight:600;';
       editStuBtn.textContent='✏️ Edit students';
       editStuBtn.onclick=()=>{logState.editingStudents=logState.editingStudents===r.id?null:r.id;renderLog();};
       adminBar.appendChild(editStuBtn);
-
+ 
       // Delete register button
       const delRegBtn=document.createElement('button');
       delRegBtn.style.cssText='border:1.5px solid #fca5a5;background:#fff;border-radius:7px;padding:4px 10px;font-size:11px;font-family:inherit;cursor:pointer;color:#dc2626;font-weight:600;';
@@ -1039,7 +1041,7 @@ function renderLog(){
       };
       adminBar.appendChild(delRegBtn);
       card.appendChild(adminBar);
-
+ 
       // Student editor panel
       if(logState.editingStudents===r.id){
         const stuEdit=document.createElement('div');
@@ -1076,7 +1078,7 @@ function renderLog(){
     wrap.appendChild(card);
   });
 }
-
+ 
 // ── Dashboard tab ─────────────────────────────────────────────────────────
 function renderDashboard(){
   const wrap=document.getElementById('tab-dashboard');wrap.innerHTML='';
@@ -1098,7 +1100,7 @@ function renderDashboard(){
   const newS=[...new Set(classRecs.flatMap(r=>r.students.filter(s=>s.flag==='new').map(s=>s.name)))];
   const drops=[...new Set(classRecs.flatMap(r=>r.students.filter(s=>s.flag==='dropped').map(s=>s.name)))];
   const unmarked=state.schedule.filter(s=>s.day===todayDay&&(!at||s.teacher===at)).filter(s=>!state.records.some(r=>r.teacher===s.teacher&&r.day===todayDay&&r.time===s.time&&r.date===todayStr));
-
+ 
   // ── Per-teacher stats ─────────────────────────────────────────────────
   const tStats={};
   classRecs.forEach(r=>{
@@ -1116,9 +1118,9 @@ function renderDashboard(){
     if(!tStats[r.teacher])tStats[r.teacher]={abs:0,late:0,present:0,total:0,sessions:0,planning:0};
     tStats[r.teacher].planning=(tStats[r.teacher].planning||0)+1;
   });
-
+ 
   wrap.innerHTML='<div style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Week '+tw+' &middot; '+todayDay+'</div>';
-
+ 
   // ── Attendance rate donut for this week ───────────────────────────────
   if(twTotal>0){
     const attRate=Math.round(twPresent/twTotal*100);
@@ -1126,7 +1128,7 @@ function renderDashboard(){
     const lateRate=Math.round(twLate/twTotal*100);
     const chartWrap=document.createElement('div');
     chartWrap.style.cssText='display:flex;align-items:center;gap:20px;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:16px 18px;margin-bottom:14px;flex-wrap:wrap;';
-
+ 
     // SVG donut chart
     const size=90,stroke=14,r=size/2-stroke/2,circ=2*Math.PI*r;
     const pPct=twPresent/twTotal,aPct=twAbs/twTotal,lPct=twLate/twTotal;
@@ -1160,7 +1162,7 @@ function renderDashboard(){
     ct2.setAttribute('dominant-baseline','middle');ct2.setAttribute('font-size','8');ct2.setAttribute('fill','#94a3b8');
     ct2.textContent='present';svg.appendChild(ct2);
     chartWrap.appendChild(svg);
-
+ 
     // Legend
     const legend=document.createElement('div');legend.style.cssText='flex:1;min-width:140px;';
     legend.innerHTML='<div style="font-weight:700;font-size:14px;color:#1e293b;margin-bottom:8px;">This week &middot; '+twTotal+' student slots</div>';
@@ -1176,20 +1178,20 @@ function renderDashboard(){
     chartWrap.appendChild(legend);
     wrap.appendChild(chartWrap);
   }
-
+ 
   // ── Stat cards ────────────────────────────────────────────────────────
   const grid=ce('stat-grid');
   [['#dc2626',twAbs,'Absences this week'],['#ea580c',twLate,'Lates this week'],['#b91c1c',atRisk4.length,'At risk (last 4 wks)'],['#475569',classRecs.length,'Total records']].forEach(([col,val,lbl])=>{
     grid.innerHTML+='<div class="stat"><div style="font-size:26px;font-weight:700;color:'+col+';line-height:1;">'+val+'</div><div style="font-size:11px;color:#64748b;margin-top:4px;">'+lbl+'</div></div>';
   });
   wrap.appendChild(grid);
-
+ 
   // ── Today unmarked ────────────────────────────────────────────────────
   if(unmarked.length){
     const lb=ce('lbl');lb.style.color='#dc2626';lb.textContent='&#9888;&#65039; TODAY\'S CLASSES WITHOUT REGISTER';wrap.appendChild(lb);
     unmarked.forEach(s=>{const d=document.createElement('div');d.style.cssText='background:#fef2f2;border:1.5px solid #fca5a5;border-radius:9px;padding:9px 12px;margin-bottom:6px;font-size:13px;';d.innerHTML='<strong>'+s.teacher+'</strong> &middot; '+s.time+' &middot; '+s.course+' <span style="color:#94a3b8;font-size:11px;">('+s.students.length+' students)</span>';wrap.appendChild(d);});
   }
-
+ 
   // ── At risk ───────────────────────────────────────────────────────────
   if(atRisk4.length||atRisk.length){
     const showList=atRisk4.length?atRisk4:atRisk;
@@ -1201,7 +1203,7 @@ function renderDashboard(){
       wrap.appendChild(d);
     });
   }
-
+ 
   // ── Per-teacher breakdown with bar chart ──────────────────────────────
   const ts=Object.entries(tStats).sort((a,b)=>{const ra=a[1].total>0?a[1].present/a[1].total:0;const rb=b[1].total>0?b[1].present/b[1].total:0;return rb-ra;});
   if(ts.length){
@@ -1213,7 +1215,7 @@ function renderDashboard(){
       const lateRate=st.total>0?Math.round(st.late/st.total*100):0;
       const card=document.createElement('div');
       card.style.cssText='border:1.5px solid #e2e8f0;border-radius:11px;background:#fff;margin-bottom:8px;overflow:hidden;';
-
+ 
       // Header row
       const hdr=document.createElement('div');hdr.style.cssText='display:flex;align-items:center;gap:10px;padding:11px 14px 8px;';
       hdr.innerHTML='<span style="font-weight:700;font-size:14px;flex:1;">'+t+'</span>'
@@ -1224,7 +1226,7 @@ function renderDashboard(){
         hdr.innerHTML+='<span style="font-size:16px;font-weight:700;color:'+rateCol+';">'+rate+'%</span>';
       }
       card.appendChild(hdr);
-
+ 
       if(st.total>0){
         // Stacked bar
         const barWrap=document.createElement('div');barWrap.style.cssText='padding:0 14px 6px;';
@@ -1249,7 +1251,7 @@ function renderDashboard(){
       wrap.appendChild(card);
     });
   }
-
+ 
   // ── New students / dropouts ───────────────────────────────────────────
   if(newS.length||drops.length){
     const g=document.createElement('div');g.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;';
@@ -1258,21 +1260,21 @@ function renderDashboard(){
     wrap.appendChild(g);
   }
 }
-
+ 
 // ── Manage tab ────────────────────────────────────────────────────────────
 const manState={fT:'',fD:'',expanded:null,pending:{},savedMsg:''};
-
+ 
 function renderManage(){
   const wrap=document.getElementById('tab-manage');wrap.innerHTML='';
   const intro=document.createElement('div');intro.style.cssText='font-size:13px;color:#64748b;margin-bottom:12px;line-height:1.6;';intro.textContent='Reassign groups to different teachers or move individual students. Changes are saved permanently.';wrap.appendChild(intro);
-
+ 
   const fGrid=document.createElement('div');fGrid.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:12px;';
   const fT=document.createElement('div');fT.innerHTML='<div class="lbl">Teacher</div>';
   const fTSel=document.createElement('select');fTSel.innerHTML='<option value="">All</option>'+TEACHERS.map(t=>'<option'+(t===manState.fT?' selected':'')+'>'+t+'</option>').join('');fTSel.onchange=e=>{manState.fT=e.target.value;renderManage();};fT.appendChild(fTSel);fGrid.appendChild(fT);
   const fD=document.createElement('div');fD.innerHTML='<div class="lbl">Day</div>';
   const fDSel=document.createElement('select');fDSel.innerHTML='<option value="">All</option>'+DAYS.map(d=>'<option'+(d===manState.fD?' selected':'')+'>'+d+'</option>').join('');fDSel.onchange=e=>{manState.fD=e.target.value;renderManage();};fD.appendChild(fDSel);fGrid.appendChild(fD);
   wrap.appendChild(fGrid);
-
+ 
   const pendCount=Object.values(manState.pending).reduce((a,p)=>a+(p.newTeacher?1:0)+Object.keys(p.moves||{}).length,0);
   if(pendCount>0){
     const pb=document.createElement('div');pb.style.cssText='background:#fef9c3;border:1.5px solid #fde047;border-radius:10px;padding:9px 13px;margin-bottom:11px;display:flex;align-items:center;gap:9px;';
@@ -1282,17 +1284,17 @@ function renderManage(){
     wrap.appendChild(pb);
   }
   if(manState.savedMsg){const sm=document.createElement('div');sm.style.cssText='font-size:12px;color:#15803d;font-weight:600;margin-bottom:9px;';sm.textContent=manState.savedMsg;wrap.appendChild(sm);}
-
+ 
   const allOpts=state.schedule.map(s=>({label:s.teacher+' · '+s.day+' '+s.time+' · '+s.course,key:slotKey(s)})).sort((a,b)=>a.label.localeCompare(b.label));
   const filtered=state.schedule.filter(s=>(!manState.fT||s.teacher===manState.fT)&&(!manState.fD||s.day===manState.fD))
     .sort((a,b)=>DAY_ORDER[a.day]-DAY_ORDER[b.day]||a.time.localeCompare(b.time)||a.teacher.localeCompare(b.teacher));
-
+ 
   filtered.forEach(s=>{
     const key=slotKey(s),isOpen=manState.expanded===key;
     const lv=lvColor(s.course),cp=capColor(s.students.length);
     const pend=manState.pending[key]||{},hasPend=pend.newTeacher||Object.keys(pend.moves||{}).length>0;
     const card=document.createElement('div');card.className='mgmt-card';if(hasPend){card.style.borderColor='#fde047';card.style.background='#fefce8';}
-
+ 
     const hdr=document.createElement('div');hdr.style.cssText='display:flex;align-items:center;gap:7px;cursor:pointer;';
     hdr.innerHTML='<span style="font-weight:700;font-size:13px;">'+s.day+' '+s.time+'</span>';
     hdr.appendChild(badge(lv.bg,lv.col,s.course));hdr.appendChild(badge(cp.bg,cp.col,s.students.length));
@@ -1301,7 +1303,7 @@ function renderManage(){
     hdr.innerHTML+='<span style="margin-left:'+(hasPend?'0':'auto')+';color:#94a3b8;font-size:11px;display:inline-block;transform:'+(isOpen?'rotate(180deg)':'none')+';transition:transform .2s;">▼</span>';
     hdr.onclick=()=>{manState.expanded=isOpen?null:key;renderManage();};
     card.appendChild(hdr);
-
+ 
     if(isOpen){
       const body=document.createElement('div');body.style.marginTop='10px';
       // Reassign teacher
@@ -1337,7 +1339,7 @@ function renderManage(){
         };
         body.appendChild(delGroupBtn);
       }
-
+ 
       if(hasPend){
         const bRow=document.createElement('div');bRow.style.cssText='margin-top:9px;display:flex;gap:7px;';
         const ab=document.createElement('button');ab.style.cssText='background:#15803d;color:#fff;border:none;border-radius:7px;padding:6px 13px;font-size:12px;font-family:inherit;font-weight:700;cursor:pointer;';ab.textContent='Apply now';ab.onclick=applyManage;bRow.appendChild(ab);
@@ -1349,7 +1351,7 @@ function renderManage(){
     wrap.appendChild(card);
   });
 }
-
+ 
 async function applyManage(){
   let ns=state.schedule.map(s=>({...s,students:[...s.students]}));
   Object.entries(manState.pending).forEach(([sk,ch])=>{
@@ -1366,14 +1368,14 @@ async function applyManage(){
   setTimeout(()=>{manState.savedMsg='';renderManage();},3000);
   renderManage();renderRegister();
 }
-
+ 
 // ── Hours tab (clock in/out) ───────────────────────────────────────────────
 // Storage: 'ewj-hours' → array of {id, teacher, date, clockIn, clockOut, hoursWorked, note, status}
 // status: 'in' | 'out'
-
+ 
 function getHours(){return Array.isArray(state.hours)?state.hours:(lsGet('ewj-hours',[]))}
 async function saveHours(hrs){state.hours=hrs;lsSet('ewj-hours',hrs);await fbSet('ewj-hours',hrs);}
-
+ 
 function fmtHHMM(d){return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}
 function fmtDateEN(d){return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});}
 function calcDuration(inISO,outISO){
@@ -1386,9 +1388,9 @@ function calcDecimal(inISO,outISO){
   const diff=(new Date(outISO)-new Date(inISO))/1000/3600;
   return diff<0?0:Math.round(diff*100)/100;
 }
-
+ 
 const hoursState={filterTeacher:'',filterMonth:'',view:'my'}; // view: 'my'|'all'
-
+ 
 function renderHours(){
   const wrap=document.getElementById('tab-hours');wrap.innerHTML='';
   const at=state.activeTeacher;
@@ -1409,14 +1411,14 @@ function renderHours(){
     };
     pinRow.appendChild(pinBtn);wrap.appendChild(pinRow);
   }
-
+ 
   const allH=getHours();
   const now=new Date();
-
+ 
   // Check if current teacher is clocked in
   const activeSessions=allH.filter(h=>h.status==='in'&&(!at||h.teacher===at));
   const myActive=at?allH.find(h=>h.status==='in'&&h.teacher===at):null;
-
+ 
   // ── Clock in/out panel ──────────────────────────────────────────────────
   if(at){
     const panel=document.createElement('div');
@@ -1464,7 +1466,7 @@ function renderHours(){
     }
     wrap.appendChild(panel);
   }
-
+ 
   // ── Admin: show active sessions from all teachers ───────────────────────
   if(!at&&activeSessions.length>0){
     const activePanel=document.createElement('div');activePanel.style.cssText='background:#fef9c3;border:1.5px solid #fde047;border-radius:12px;padding:12px 14px;margin-bottom:14px;';
@@ -1477,7 +1479,7 @@ function renderHours(){
     });
     wrap.appendChild(activePanel);
   }
-
+ 
   // ── History / Admin view ────────────────────────────────────────────────
   const viewToggle=document.createElement('div');viewToggle.style.cssText='display:flex;gap:6px;margin-bottom:12px;';
   if(at){
@@ -1488,34 +1490,34 @@ function renderHours(){
     });
   }
   wrap.appendChild(viewToggle);
-
+ 
   // Filters
   const filterRow=document.createElement('div');filterRow.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;';
-
+ 
   if(!at||hoursState.view==='all'){
     const tDiv=document.createElement('div');tDiv.innerHTML='<div class="lbl">Teacher</div>';
     const tSel=document.createElement('select');
     tSel.innerHTML='<option value="">All teachers</option>'+TEACHERS.map(t=>'<option'+(t===hoursState.filterTeacher?' selected':'')+'>'+t+'</option>').join('');
     tSel.onchange=e=>{hoursState.filterTeacher=e.target.value;renderHours();};tDiv.appendChild(tSel);filterRow.appendChild(tDiv);
   }
-
+ 
   const mDiv=document.createElement('div');mDiv.innerHTML='<div class="lbl">Month</div>';
   const months=[...new Set(allH.map(h=>h.dateISO?h.dateISO.slice(0,7):'').filter(Boolean))].sort().reverse();
   const mSel=document.createElement('select');mSel.innerHTML='<option value="">All months</option>'+months.map(m=>{const [y,mo]=m.split('-');const mn=new Date(y,+mo-1).toLocaleString('en',{month:'long'});return'<option value="'+m+'"'+(m===hoursState.filterMonth?' selected':'')+'>'+mn+' '+y+'</option>';}).join('');
   mSel.onchange=e=>{hoursState.filterMonth=e.target.value;renderHours();};mDiv.appendChild(mSel);filterRow.appendChild(mDiv);
   wrap.appendChild(filterRow);
-
+ 
   // Filter records
   let filtered=[...allH].filter(h=>h.status==='out'); // only completed sessions
   if(at&&hoursState.view==='my') filtered=filtered.filter(h=>h.teacher===at);
   if(hoursState.filterTeacher) filtered=filtered.filter(h=>h.teacher===hoursState.filterTeacher);
   if(hoursState.filterMonth) filtered=filtered.filter(h=>h.dateISO&&h.dateISO.startsWith(hoursState.filterMonth));
   filtered.sort((a,b)=>b.dateISO.localeCompare(a.dateISO)||b.clockIn.localeCompare(a.clockIn));
-
+ 
   // Summary stats
   const totalHours=filtered.reduce((s,h)=>s+(h.hoursWorked||0),0);
   const byTeacher={};filtered.forEach(h=>{byTeacher[h.teacher]=(byTeacher[h.teacher]||0)+(h.hoursWorked||0);});
-
+ 
   if(filtered.length>0){
     const statsBar=document.createElement('div');statsBar.style.cssText='display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;';
     const addStat=(val,lbl,col)=>{const s=document.createElement('div');s.style.cssText='background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:9px;padding:10px 14px;flex:1;min-width:100px;';s.innerHTML='<div style="font-size:22px;font-weight:700;color:'+col+';">'+val+'</div><div style="font-size:11px;color:#64748b;margin-top:2px;">'+lbl+'</div>';statsBar.appendChild(s);};
@@ -1524,28 +1526,28 @@ function renderHours(){
     if(!at||hoursState.view==='all') addStat(Object.keys(byTeacher).length,'Teachers','#854d0e');
     wrap.appendChild(statsBar);
   }
-
+ 
   // Export CSV
   if(filtered.length>0){
     const expRow=document.createElement('div');expRow.style.cssText='display:flex;justify-content:flex-end;margin-bottom:10px;';
     const expBtn=document.createElement('button');expBtn.style.cssText='border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;padding:6px 12px;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;color:#64748b;';
     expBtn.textContent='↓ Export CSV';expBtn.onclick=()=>exportHoursCSV(filtered);expRow.appendChild(expBtn);wrap.appendChild(expRow);
   }
-
+ 
   // Records table
   if(!filtered.length){
     const empty=document.createElement('div');empty.style.cssText='text-align:center;padding:32px;color:#94a3b8;font-size:14px;';empty.textContent='No completed sessions yet.';wrap.appendChild(empty);return;
   }
-
+ 
   // Group by date
   const byDate={};filtered.forEach(h=>{if(!byDate[h.dateISO])byDate[h.dateISO]=[];byDate[h.dateISO].push(h);});
-
+ 
   Object.entries(byDate).sort((a,b)=>b[0].localeCompare(a[0])).forEach(([dateISO,entries])=>{
     const dateHdr=document.createElement('div');dateHdr.style.cssText='font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;margin:12px 0 6px;';
     dateHdr.textContent=fmtDateEN(new Date(dateISO+'T12:00:00'));wrap.appendChild(dateHdr);
-
+ 
     const dayTotal=entries.reduce((s,h)=>s+(h.hoursWorked||0),0);
-
+ 
     entries.forEach(h=>{
       const card=document.createElement('div');card.style.cssText='border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;margin-bottom:6px;padding:11px 13px;';
       const row1=document.createElement('div');row1.style.cssText='display:flex;align-items:center;gap:10px;';
@@ -1554,7 +1556,7 @@ function renderHours(){
       const durBadge=document.createElement('span');durBadge.style.cssText='font-size:12px;font-weight:700;background:#eef2ff;color:#4f46e5;padding:3px 9px;border-radius:6px;flex-shrink:0;';durBadge.textContent=h.duration;row1.appendChild(durBadge);
       card.appendChild(row1);
       if(h.note){const noteDiv=document.createElement('div');noteDiv.style.cssText='font-size:12px;color:#64748b;margin-top:5px;font-style:italic;';noteDiv.textContent='📝 '+h.note;card.appendChild(noteDiv);}
-
+ 
       // Admin: manual edit/delete
       if(!at){
         const adminRow=document.createElement('div');adminRow.style.cssText='display:flex;gap:8px;margin-top:8px;justify-content:flex-end;';
@@ -1583,11 +1585,11 @@ function renderHours(){
       }
       wrap.appendChild(card);
     });
-
+ 
     // Day total
     const dayTotalDiv=document.createElement('div');dayTotalDiv.style.cssText='text-align:right;font-size:12px;font-weight:700;color:#4f46e5;margin-bottom:4px;';dayTotalDiv.textContent='Day total: '+dayTotal.toFixed(1)+'h';wrap.appendChild(dayTotalDiv);
   });
-
+ 
   // Teacher totals summary (admin / all view)
   if((!at||hoursState.view==='all')&&Object.keys(byTeacher).length>1){
     const sumHdr=document.createElement('div');sumHdr.style.cssText='font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;margin:16px 0 6px;';sumHdr.textContent='Summary by teacher';wrap.appendChild(sumHdr);
@@ -1600,15 +1602,15 @@ function renderHours(){
     wrap.appendChild(sumTable);
   }
 }
-
+ 
 function exportHoursCSV(records){
   const rows=[['Teacher','Date','Clock In','Clock Out','Duration','Hours (decimal)','Note']];
   records.forEach(h=>rows.push([h.teacher,h.date,h.clockInDisplay,h.clockOutDisplay||'',h.duration||'',h.hoursWorked||'',h.note||'']));
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='hours_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 }
-
-
+ 
+ 
 // ── Messages tab (threaded conversations) ────────────────────────────────
 async function saveMessages(msgs){
   acquireWriteLock(); // suppress SSE for 3s
@@ -1620,7 +1622,7 @@ async function saveMessages(msgs){
     await Promise.race([fetch(FB_URL+'/messages.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}),t]);
   } catch(e){ console.warn('Messages save failed:',e.message); }
 }
-
+ 
 async function deleteMessage(id){
   try {
     const t=new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),5000));
@@ -1628,15 +1630,15 @@ async function deleteMessage(id){
     state.messages=state.messages.filter(m=>m.id!==id);
   } catch(e){ console.warn('Message delete failed:',e.message); }
 }
-
+ 
 // msgState tracks which thread is open and reply drafts
 const msgState={openThread:null,replyDraft:''};
-
+ 
 function getMyName(){
   const at=state.activeTeacher;
   return at===''?'John (admin)':at;
 }
-
+ 
 function canSeeMessage(m){
   const me=getMyName();
   const at=state.activeTeacher;
@@ -1648,7 +1650,7 @@ function canSeeMessage(m){
   if((m.replies||[]).some(r=>r.from===me||r.to===me||m.to==='all')) return true;
   return false;
 }
-
+ 
 function isUnreadForMe(m){
   const me=getMyName();
   const at=state.activeTeacher;
@@ -1663,7 +1665,7 @@ function isUnreadForMe(m){
   // Unread reply to me
   return (m.replies||[]).some(r=>(r.to===me||r.to==='all')&&r.from!==me&&!r.read);
 }
-
+ 
 function renderMessages(){
   const wrap=document.getElementById('tab-messages');
   if(!wrap)return;
@@ -1671,12 +1673,12 @@ function renderMessages(){
   const at=state.activeTeacher;
   const me=getMyName();
   const msgs=state.messages||[];
-
+ 
   // ── Compose new message ────────────────────────────────────────────────
   const compose=document.createElement('div');
   compose.style.cssText='background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:16px;';
   compose.innerHTML='<div class="lbl" style="margin-bottom:8px;">New Message</div>';
-
+ 
   const toRow=document.createElement('div');toRow.style.cssText='display:flex;gap:8px;margin-bottom:8px;align-items:center;';
   const toLbl=document.createElement('span');toLbl.style.cssText='font-size:12px;font-weight:600;color:#475569;flex-shrink:0;width:24px;';toLbl.textContent='To:';
   const toSel=document.createElement('select');toSel.style.cssText='flex:1;padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;outline:none;';
@@ -1690,14 +1692,14 @@ function renderMessages(){
     toSel.appendChild(o);
   });
   toRow.appendChild(toLbl);toRow.appendChild(toSel);compose.appendChild(toRow);
-
+ 
   const msgIn=document.createElement('textarea');
   msgIn.style.cssText='width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;resize:none;min-height:68px;outline:none;display:block;margin-bottom:8px;';
   msgIn.placeholder='Type your message…';
   msgIn.onfocus=()=>msgIn.style.borderColor='#4f46e5';
   msgIn.onblur=()=>msgIn.style.borderColor='#e2e8f0';
   compose.appendChild(msgIn);
-
+ 
   const sendBtn=document.createElement('button');
   sendBtn.style.cssText='background:#4f46e5;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-family:inherit;font-weight:700;cursor:pointer;';
   sendBtn.textContent='Send';
@@ -1709,14 +1711,14 @@ function renderMessages(){
     await saveMessages(updated);msgIn.value='';renderMessages();
   };
   compose.appendChild(sendBtn);wrap.appendChild(compose);
-
+ 
   // ── Message threads ────────────────────────────────────────────────────
   const visible=msgs.filter(canSeeMessage).sort((a,b)=>b.id-a.id);
-
+ 
   if(!visible.length){
     const empty=document.createElement('div');empty.style.cssText='text-align:center;padding:32px;color:#94a3b8;font-size:14px;';empty.textContent='No messages yet.';wrap.appendChild(empty);return;
   }
-
+ 
   // Mark messages as read after 1s
   setTimeout(async()=>{
     let changed=false;
@@ -1736,37 +1738,37 @@ function renderMessages(){
     });
     if(changed)await saveMessages(upd);
   },1500);
-
+ 
   visible.forEach(m=>{
     const isOwn=m.from===me;
     const unread=isUnreadForMe(m);
     const isOpen=msgState.openThread===m.id;
     const replies=m.replies||[];
-
+ 
     const card=document.createElement('div');
     card.style.cssText='border:1.5px solid '+(unread?'#c7d2fe':'#e2e8f0')+';border-radius:12px;margin-bottom:10px;overflow:hidden;background:#fff;';
-
+ 
     // Thread header
     const hdr=document.createElement('div');
     hdr.style.cssText='padding:12px 14px;cursor:pointer;background:'+(isOwn?'#eef2ff':unread?'#f8fafc':'#fff')+';';
     hdr.onclick=()=>{msgState.openThread=isOpen?null:m.id;renderMessages();};
-
+ 
     const hdrTop=document.createElement('div');hdrTop.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;';
     hdrTop.innerHTML='<span style="font-weight:700;font-size:13px;color:#1e293b;">'+m.from+'</span>'
       +'<span style="font-size:11px;color:#94a3b8;">&#8594; '+(m.to==='all'?'Everyone':m.to==='admin'?'John (admin)':m.to)+'</span>'
       +(unread?'<span style="font-size:10px;background:#eef2ff;color:#4f46e5;padding:2px 7px;border-radius:20px;font-weight:700;flex-shrink:0;">NEW</span>':'')
       +'<span style="font-size:11px;color:#cbd5e1;margin-left:auto;">'+m.sentAt+'</span>';
     hdr.appendChild(hdrTop);
-
+ 
     const preview=document.createElement('div');preview.style.cssText='font-size:13px;color:#475569;'+(isOpen?'':'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;');
     preview.textContent=m.text;hdr.appendChild(preview);
-
+ 
     if(replies.length){
       const rCount=document.createElement('div');rCount.style.cssText='font-size:11px;color:#94a3b8;margin-top:4px;';
       rCount.textContent=replies.length+' repl'+(replies.length===1?'y':'ies');hdr.appendChild(rCount);
     }
     card.appendChild(hdr);
-
+ 
     // Expanded thread
     if(isOpen){
       // Show all replies
@@ -1781,7 +1783,7 @@ function renderMessages(){
           +'<div style="font-size:13px;color:#1e293b;">'+r.text+'</div>';
         card.appendChild(rDiv);
       });
-
+ 
       // Reply input
       const replyBox=document.createElement('div');
       replyBox.style.cssText='padding:10px 14px;border-top:1.5px solid #e2e8f0;background:#f8fafc;display:flex;gap:8px;align-items:flex-end;';
@@ -1792,7 +1794,7 @@ function renderMessages(){
       replyIn.oninput=e=>{msgState.replyDraft=e.target.value;};
       replyIn.onfocus=()=>replyIn.style.borderColor='#4f46e5';
       replyIn.onblur=()=>replyIn.style.borderColor='#e2e8f0';
-
+ 
       const replyBtn=document.createElement('button');
       replyBtn.style.cssText='border:none;background:#4f46e5;color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-family:inherit;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;';
       replyBtn.textContent='Reply';
@@ -1806,7 +1808,7 @@ function renderMessages(){
         await saveMessages(upd);msgState.replyDraft='';renderMessages();
       };
       replyBox.appendChild(replyIn);replyBox.appendChild(replyBtn);card.appendChild(replyBox);
-
+ 
       // Admin delete thread
       if(at===''){
         const delBar=document.createElement('div');delBar.style.cssText='padding:6px 14px 10px;display:flex;justify-content:flex-end;background:#f8fafc;';
@@ -1819,12 +1821,12 @@ function renderMessages(){
         delBar.appendChild(delBtn);card.appendChild(delBar);
       }
     }
-
+ 
     wrap.appendChild(card);
   });
 }
-
-
+ 
+ 
 // ── Feedback stored separately from records ──────────────────────────────
 // This ensures feedback writes NEVER overwrite attendance records
 async function saveFeedback(recordId, feedbackData){
@@ -1844,7 +1846,7 @@ async function saveFeedback(recordId, feedbackData){
     lsSet('ewj-feedback', state.feedback);
   } catch(e){ console.warn('Feedback save failed:',e.message); }
 }
-
+ 
 async function loadFeedback(){
   try {
     const t=new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),5000));
@@ -1859,7 +1861,7 @@ async function loadFeedback(){
     lsSet('ewj-feedback',fb);
   } catch(e){ state.feedback=lsGet('ewj-feedback',{}); }
 }
-
+ 
 function mergeFeedbackIntoRecords(){
   if(!state.feedback)return;
   state.records=state.records.map(r=>{
@@ -1875,8 +1877,8 @@ function mergeFeedbackIntoRecords(){
     };
   });
 }
-
-
+ 
+ 
 function fbSubscribe_feedback(){
   try {
     const es=new EventSource(FB_URL+'/feedback.json');
@@ -1896,7 +1898,7 @@ function fbSubscribe_feedback(){
     });
   } catch(e){ console.warn('Feedback SSE failed:',e); }
 }
-
+ 
 // ── Main render ───────────────────────────────────────────────────────────
 function renderAll(){
   renderTeacherChips();
@@ -1917,7 +1919,7 @@ function renderAll(){
   if(state.tab==='hours')renderHours();
   if(state.tab==='messages')renderMessages();
 }
-
+ 
 // Boot
 bootFromFirebase();
 </script>
