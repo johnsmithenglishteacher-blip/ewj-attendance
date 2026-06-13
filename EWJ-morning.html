@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EWJ Morning Dashboard</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:#1a1a1a;background:#f2f1ec;min-height:100vh}
+
+/* ── Header ── */
+.header{background:#fff;border-bottom:1px solid #e0dfd8;padding:1rem 1.5rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.header-left{display:flex;align-items:center;gap:12px}
+.ewj-logo{width:36px;height:36px;background:#185FA5;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0}
+.header-title{font-size:17px;font-weight:600}
+.header-sub{font-size:12px;color:#888;margin-top:1px}
+.header-date{font-size:13px;color:#555;text-align:right}
+.header-day{font-size:11px;color:#aaa;margin-top:1px}
+
+/* ── Nav tabs ── */
+.nav{background:#fff;border-bottom:1px solid #e0dfd8;padding:0 1.5rem;display:flex;gap:0}
+.nav-tab{padding:10px 18px;font-size:13px;color:#777;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap}
+.nav-tab:hover{color:#1a1a1a}
+.nav-tab.active{color:#185FA5;border-bottom-color:#185FA5;font-weight:500}
+
+/* ── Layout ── */
+.page{display:none;padding:1.5rem;max-width:900px;margin:0 auto}
+.page.visible{display:block}
+
+/* ── Links page ── */
+.section-title{font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin:1.25rem 0 .6rem}
+.section-title:first-child{margin-top:0}
+.link-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:.5rem}
+.link-card{display:flex;align-items:flex-start;gap:12px;background:#fff;border:1px solid #e0dfd8;border-radius:10px;padding:.85rem 1rem;text-decoration:none;color:inherit;transition:border-color .15s,box-shadow .15s}
+.link-card:hover{border-color:#185FA5;box-shadow:0 1px 6px rgba(24,95,165,.1)}
+.link-card .icon{font-size:20px;flex-shrink:0;margin-top:1px}
+.link-title{font-weight:600;font-size:13px;margin-bottom:2px;color:#1a1a1a}
+.link-desc{font-size:12px;color:#888;line-height:1.4}
+.link-url{font-size:11px;color:#185FA5;margin-top:3px;word-break:break-all}
+
+/* ── Report page ── */
+.report-topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
+.report-topbar h2{font-size:16px;font-weight:600}
+.rtabs{display:flex;gap:6px;margin-bottom:1.25rem}
+.rtab{padding:6px 16px;border-radius:8px;border:1px solid #ddd;background:#fff;cursor:pointer;font-size:12px;color:#666}
+.rtab.active{background:#185FA5;color:#fff;border-color:#185FA5;font-weight:500}
+.rsection{display:none}.rsection.visible{display:block}
+.metric-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:1rem}
+.metric{background:#fff;border-radius:8px;border:1px solid #e0dfd8;padding:.8rem .9rem}
+.metric .lbl{font-size:11px;color:#999;margin-bottom:3px}
+.metric .val{font-size:20px;font-weight:600}
+.val.green{color:#3B6D11}.val.amber{color:#854F0B}.val.red{color:#A32D2D}.val.blue{color:#185FA5}
+.card{background:#fff;border:1px solid #e0dfd8;border-radius:10px;padding:.9rem 1.1rem;margin-bottom:.85rem}
+.card h3{font-size:14px;font-weight:600;margin-bottom:.6rem}
+.slbl{font-size:10px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin:.9rem 0 .4rem;display:flex;align-items:center;justify-content:space-between}
+.badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:500}
+.badge.green{background:#EAF3DE;color:#3B6D11}.badge.amber{background:#FAEEDA;color:#854F0B}
+.badge.red{background:#FCEBEB;color:#A32D2D}.badge.blue{background:#E6F1FB;color:#185FA5}
+.badge.purple{background:#EEEDFE;color:#534AB7}
+.ptr-list{list-style:none}
+.ptr-list li{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid #f0efea;font-size:12px}
+.ptr-list li:last-child{border-bottom:none}
+.pi{font-size:15px;flex-shrink:0;margin-top:1px}
+.checklist{list-style:none}
+.checklist li{display:flex;align-items:flex-start;gap:8px;padding:6px 0;font-size:12px;border-bottom:1px solid #f0efea;cursor:pointer}
+.checklist li:last-child{border-bottom:none}
+.checklist li input{margin-top:2px;flex-shrink:0;accent-color:#185FA5;cursor:pointer}
+.checklist li.done{color:#bbb;text-decoration:line-through}
+.bar-wrap{height:7px;background:#f0efea;border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px}
+.week-row{display:grid;grid-template-columns:110px 1fr 72px;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #f0efea;font-size:12px}
+.week-row:last-child{border-bottom:none}
+.t-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:1rem}
+.t-card{background:#fff;border:1px solid #e0dfd8;border-radius:10px;padding:.8rem .9rem;cursor:pointer;transition:border-color .15s}
+.t-card:hover{border-color:#185FA5}.t-card.sel{border:2px solid #185FA5}
+.t-name{font-weight:600;font-size:13px;margin-bottom:3px}
+.t-meta{font-size:11px;color:#888}
+.spinner{text-align:center;padding:1.5rem;color:#aaa;font-size:13px}
+.ai-block{background:#EEEDFE;border-left:3px solid #534AB7;border-radius:0 8px 8px 0;padding:.65rem .9rem;margin:.4rem 0;font-size:12px;line-height:1.6}
+.ai-lbl{font-size:10px;font-weight:600;color:#534AB7;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.ai-followup{background:#E6F1FB;border-left:3px solid #185FA5;border-radius:0 8px 8px 0;padding:.5rem .8rem;margin-top:.4rem;font-size:12px;color:#185FA5}
+.alert-block{border-radius:8px;padding:.65rem .9rem;margin:.35rem 0;font-size:12px}
+.alert-block.high{background:#FAEEDA;border-left:3px solid #854F0B}
+.alert-block.positive{background:#EAF3DE;border-left:3px solid #3B6D11}
+.alert-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.alert-block.high .alert-lbl{color:#854F0B}
+.alert-block.positive .alert-lbl{color:#3B6D11}
+.gen-btn{background:#EEEDFE;border:1px solid #534AB7;color:#534AB7;border-radius:7px;padding:4px 12px;font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.gen-btn:hover{background:#534AB7;color:#fff}
+.gen-btn:disabled{opacity:.5;cursor:not-allowed}
+.icon-btn{background:#fff;border:1px solid #ddd;border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer;color:#666;display:inline-flex;align-items:center;gap:4px}
+.icon-btn:hover{background:#f2f1ec}
+input[type=date]{border:1px solid #ddd;border-radius:7px;padding:5px 9px;font-size:12px;background:#fff;color:#1a1a1a;cursor:pointer}
+hr.div{border:none;border-top:1px solid #f0efea;margin:.9rem 0}
+.lc{border:1px solid #e0dfd8;border-radius:9px;padding:.7rem .9rem;margin-bottom:.6rem}
+.lc-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem}
+.lc-title{font-weight:600;font-size:13px}
+.lc-comment{font-size:12px;color:#777;font-style:italic;margin-bottom:.4rem;line-height:1.5}
+.note-tag{display:inline-block;background:#f2f1ec;border:1px solid #ddd;border-radius:4px;font-size:10px;padding:1px 6px;color:#666;margin-right:6px}
+.morning-banner{background:linear-gradient(135deg,#185FA5,#0C447C);border-radius:10px;padding:1rem 1.25rem;color:#fff;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between}
+.morning-banner .greet{font-size:15px;font-weight:600}
+.morning-banner .greet-sub{font-size:12px;opacity:.8;margin-top:2px}
+.morning-banner .stat-pills{display:flex;gap:8px}
+.pill{background:rgba(255,255,255,.15);border-radius:20px;padding:4px 12px;font-size:11px;font-weight:500}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="ewj-logo">EWJ</div>
+    <div>
+      <div class="header-title">English with John</div>
+      <div class="header-sub">Morning dashboard</div>
+    </div>
+  </div>
+  <div style="text-align:right">
+    <div class="header-date" id="hDate">—</div>
+    <div class="header-day" id="hDay">—</div>
+  </div>
+</div>
+
+<div class="nav">
+  <div class="nav-tab active" onclick="switchPage('reports')"><i class="ti ti-chart-bar" style="margin-right:5px"></i>Morning report</div>
+  <div class="nav-tab" onclick="switchPage('links')"><i class="ti ti-link" style="margin-right:5px"></i>Tools &amp; links</div>
+</div>
+
+<!-- ═══════════════ REPORTS PAGE ═══════════════ -->
+<div id="reports" class="page visible">
+
+  <div class="morning-banner">
+    <div>
+      <div class="greet" id="greetMsg">Good morning, John</div>
+      <div class="greet-sub" id="greetSub">Loading yesterday's report…</div>
+    </div>
+    <div class="stat-pills" id="bannerPills"></div>
+  </div>
+
+  <div class="report-topbar">
+    <h2>Attendance reports</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="date" id="datePicker">
+      <button class="icon-btn" onclick="refreshAll()"><i class="ti ti-refresh"></i> Refresh</button>
+    </div>
+  </div>
+
+  <div class="rtabs">
+    <button class="rtab active" onclick="switchRTab('daily')">Daily</button>
+    <button class="rtab" onclick="switchRTab('weekly')">Weekly</button>
+    <button class="rtab" onclick="switchRTab('teacher')">Per teacher</button>
+  </div>
+
+  <div id="daily" class="rsection visible">
+    <div id="dailyContent"><div class="spinner"><i class="ti ti-loader"></i> Loading…</div></div>
+  </div>
+  <div id="weekly" class="rsection">
+    <div id="weeklyContent"><div class="spinner"><i class="ti ti-loader"></i> Loading…</div></div>
+  </div>
+  <div id="teacher" class="rsection">
+    <p style="font-size:12px;color:#888;margin-bottom:.85rem">Select a teacher. The shareable copy excludes AI analysis and alerts.</p>
+    <div class="t-grid" id="teacherGrid"></div>
+    <div id="teacherDetail"></div>
+  </div>
+</div>
+
+<!-- ═══════════════ LINKS PAGE ═══════════════ -->
+<div id="links" class="page">
+
+  <div class="section-title">📋 Attendance &amp; admin</div>
+  <div class="link-grid">
+    <a class="link-card" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/" target="_blank">
+      <span class="icon">📋</span>
+      <div><div class="link-title">Attendance Register</div><div class="link-desc">Live attendance form for all teachers</div><div class="link-url">johnsmithenglishteacher-blip.github.io/ewj-attendance/</div></div>
+    </a>
+    <a class="link-card" href="https://englishwithjohn.es/attendance-register/" target="_blank">
+      <span class="icon">🌐</span>
+      <div><div class="link-title">WordPress embed</div><div class="link-desc">Attendance form via the academy website</div><div class="link-url">englishwithjohn.es/attendance-register/</div></div>
+    </a>
+  </div>
+
+  <div class="section-title">🛠 Tools</div>
+  <div class="link-grid">
+    <a class="link-card" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/feedback-generator.html" target="_blank">
+      <span class="icon">📝</span>
+      <div><div class="link-title">Feedback Generator</div><div class="link-desc">AI-powered feedback on teacher lesson comments</div><div class="link-url">…/feedback-generator.html</div></div>
+    </a>
+    <a class="link-card" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/cleanup.html" target="_blank">
+      <span class="icon">🧹</span>
+      <div><div class="link-title">Cleanup Tool</div><div class="link-desc">Remove duplicate records from Firebase</div><div class="link-url">…/cleanup.html</div></div>
+    </a>
+    <a class="link-card" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/ewj-reports.html" target="_blank">
+      <span class="icon">📊</span>
+      <div><div class="link-title">Reports (standalone)</div><div class="link-desc">Full reports page hosted on GitHub Pages</div><div class="link-url">…/ewj-reports.html</div></div>
+    </a>
+  </div>
+
+  <div class="section-title">💻 Developer &amp; backend</div>
+  <div class="link-grid">
+    <a class="link-card" href="https://github.com/johnsmithenglishteacher-blip/ewj-attendance" target="_blank">
+      <span class="icon">🐙</span>
+      <div><div class="link-title">GitHub repository</div><div class="link-desc">Upload index.html here to deploy updates</div><div class="link-url">github.com/johnsmithenglishteacher-blip/ewj-attendance</div></div>
+    </a>
+    <a class="link-card" href="https://console.firebase.google.com" target="_blank">
+      <span class="icon">🔥</span>
+      <div><div class="link-title">Firebase console</div><div class="link-desc">Realtime Database — view, edit, clean records</div><div class="link-url">console.firebase.google.com</div></div>
+    </a>
+    <a class="link-card" href="https://console.anthropic.com" target="_blank">
+      <span class="icon">🤖</span>
+      <div><div class="link-title">Anthropic console</div><div class="link-desc">Manage API key and credits for AI features</div><div class="link-url">console.anthropic.com</div></div>
+    </a>
+  </div>
+
+  <div class="section-title">🏫 Academy</div>
+  <div class="link-grid">
+    <a class="link-card" href="https://englishwithjohn.es" target="_blank">
+      <span class="icon">🌍</span>
+      <div><div class="link-title">EWJ Website</div><div class="link-desc">Main academy website</div><div class="link-url">englishwithjohn.es</div></div>
+    </a>
+    <a class="link-card" href="https://drive.google.com" target="_blank">
+      <span class="icon">📁</span>
+      <div><div class="link-title">Google Drive</div><div class="link-desc">Shared teaching resources and documents</div></div>
+    </a>
+    <a class="link-card" href="https://www.cambridgeenglish.org/teaching-english/cambridge-english-examiners/" target="_blank">
+      <span class="icon">🎓</span>
+      <div><div class="link-title">Cambridge English</div><div class="link-desc">Examiner resources and exam information</div></div>
+    </a>
+  </div>
+</div>
+
+<script>
+const FB='https://ewj-attendance-default-rtdb.firebaseio.com';
+const TEACHERS=['Anna','Chaymae','Clara','Ferran','Mary','Mireia','John'];
+const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const STYLES=['Learning Analysis & Early Language Development','Student Confidence & Adaptability','Assessment & Exam Coaching','Leadership & Teamwork','Communicative Fluency & Interaction','Grammar & Accuracy Focus','Creative & Productive Skills'];
+
+let allRecords=[],allFeedback=[],aiCache={},selectedTeacher=null,reportDate=null;
+
+/* ── Date utils ── */
+const fmt=d=>d.toISOString().split('T')[0];
+const fmtDisp=d=>d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+const fmtShort=d=>d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+
+function initClock(){
+  const now=new Date();
+  document.getElementById('hDate').textContent=now.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+  document.getElementById('hDay').textContent=DAYS[now.getDay()];
+  const h=now.getHours();
+  const greet=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+  document.getElementById('greetMsg').textContent=greet+', John';
+}
+
+function getWeekRange(d){const day=d.getDay(),mon=new Date(d);mon.setDate(d.getDate()-(day===0?6:day-1));const sun=new Date(mon);sun.setDate(mon.getDate()+6);return{mon,sun};}
+function attendanceRate(recs){const tot=recs.reduce((a,r)=>a+(r.students?r.students.length:0),0);const pres=recs.reduce((a,r)=>a+(r.students?r.students.filter(s=>s.status==='present').length:0),0);return tot>0?Math.round(pres/tot*100):null;}
+function absents(recs){return recs.flatMap(r=>(r.students||[]).filter(s=>s.status==='absent').map(s=>({name:s.name,cls:r.className||r.group||'',teacher:r.teacher,date:r.date})));}
+function lates(recs){return recs.flatMap(r=>(r.students||[]).filter(s=>s.status==='late').map(s=>({name:s.name,cls:r.className||r.group||'',teacher:r.teacher})));}
+
+async function fetchFB(path){const r=await fetch(`${FB}/${path}.json`);if(!r.ok)throw new Error(r.status);return r.json();}
+async function loadAll(){
+  try{const[recs,fb]=await Promise.all([fetchFB('records'),fetchFB('feedback')]);
+    allRecords=recs?Object.values(recs):[];allFeedback=fb?Object.values(fb):[];}
+  catch(e){allRecords=[];allFeedback=[];}
+}
+
+function getDateRecs(d){return allRecords.filter(r=>r.date===d);}
+function getWeekRecs(mon,sun){const m=mon.getTime(),s=sun.getTime();return allRecords.filter(r=>{const d=new Date(r.date).getTime();return d>=m&&d<=s;});}
+
+const rateColor=r=>r===null?'blue':r>=85?'green':r>=70?'amber':'red';
+const rateLabel=r=>r===null?'–':r+'%';
+const barColor=r=>r>=85?'#3B6D11':r>=70?'#854F0B':'#A32D2D';
+
+/* ── AI ── */
+async function callAI(system,userMsg){
+  const key=btoa(encodeURIComponent(userMsg)).slice(0,48);
+  if(aiCache[key])return aiCache[key];
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,system,messages:[{role:'user',content:userMsg}]})});
+    const data=await res.json();
+    const raw=data.content?.[0]?.text||'{}';
+    const p=JSON.parse(raw.replace(/```json|```/g,'').trim());
+    aiCache[key]=p;return p;
+  }catch{return null;}
+}
+
+async function genLessonFeedback(r){
+  const style=STYLES[Math.floor(Math.random()*STYLES.length)];
+  const ai=await callAI(
+    `You are John's head teacher assistant at English with John academy in Catalonia. Write structured pedagogical feedback on a lesson comment. Respond ONLY with a JSON object (no markdown) with keys: "style" (the style name used), "analysis" (2-3 sentence pedagogical observation, warm and specific to the comment), "followup" (one concrete follow-up starting with "Could you…" or "Next lesson, please…"), "alert" (null OR {type:"high"|"positive",text:string}).`,
+    `Teacher: ${r.teacher}\nClass: ${r.group||r.className||''}\nStyle: ${style}\nComment: "${r.comment}"`
+  );
+  return ai||{style,analysis:'Unable to generate.',followup:null,alert:null};
+}
+
+async function genDailyAlert(dayRecs){
+  const comments=dayRecs.filter(r=>r.comment&&r.comment.trim()).map(r=>`${r.teacher} · ${r.group||r.className||''}: "${r.comment}"`).join('\n');
+  if(!comments)return null;
+  return callAI(
+    `You are a head teacher assistant. Given lesson comments, respond ONLY with JSON: {"highPriority":[{student,teacher,text}],"positive":[string],"leadershipNote":string}. Max 3 high priority, max 4 positive. One sentence each.`,
+    `Today's comments:\n${comments}`
+  );
+}
+
+async function genWeeklyAlert(weekRecs){
+  const comments=weekRecs.filter(r=>r.comment&&r.comment.trim()).slice(0,14).map(r=>`${r.teacher} · ${r.group||r.className||''} (${r.date}): "${r.comment}"`).join('\n');
+  if(!comments)return null;
+  return callAI(
+    `You are a head teacher assistant reviewing a full week. Respond ONLY with JSON: {"weekSummary":string,"highPriority":[{student,teacher,text}],"positive":[string],"leadershipNote":string}. Max 3 high priority, max 4 positive. One sentence each.`,
+    `This week's comments:\n${comments}`
+  );
+}
+
+function alertHtml(a){
+  if(!a)return'<p style="font-size:12px;color:#aaa">No comments to analyse.</p>';
+  let h='';
+  if(a.weekSummary)h+=`<div class="ai-block" style="margin-bottom:.6rem"><div class="ai-lbl">Week overview</div>${a.weekSummary}</div>`;
+  if(a.leadershipNote)h+=`<div class="ai-block" style="margin-bottom:.6rem"><div class="ai-lbl">Leadership note</div>${a.leadershipNote}</div>`;
+  if(a.highPriority&&a.highPriority.length){h+=`<div class="slbl" style="margin-top:.6rem">🟠 High priority</div>`;a.highPriority.forEach(x=>{h+=`<div class="alert-block high"><div class="alert-lbl">${x.student||''}${x.teacher?' · '+x.teacher:''}</div>${x.text}</div>`;});}
+  if(a.positive&&a.positive.length){h+=`<div class="slbl" style="margin-top:.6rem">🟢 Positive developments</div>`;a.positive.forEach(x=>{h+=`<div class="alert-block positive"><div class="alert-lbl">Positive</div>${x}</div>`;});}
+  return h;
+}
+
+function ptrHtml(pts){return pts.map(p=>`<li><i class="ti ${p.icon} pi" style="color:${p.type==='red'?'#A32D2D':p.type==='amber'?'#854F0B':p.type==='green'?'#3B6D11':'#185FA5'}"></i><span>${p.text}</span></li>`).join('');}
+
+function pointers(dr){
+  const pts=[];
+  const rate=attendanceRate(dr);
+  if(rate!==null){if(rate<70)pts.push({icon:'ti-alert-triangle',text:`Low attendance today (${rate}%) — note in team message.`,type:'red'});else if(rate>=90)pts.push({icon:'ti-circle-check',text:`Strong day — ${rate}% attendance across all classes.`,type:'green'});}
+  const rep={};allRecords.forEach(r=>(r.students||[]).filter(s=>s.status==='absent').forEach(s=>{rep[s.name]=(rep[s.name]||0)+1;}));
+  const atRisk=absents(dr).filter(a=>rep[a.name]>=3);
+  if(atRisk.length)pts.push({icon:'ti-user-exclamation',text:`At-risk students absent today: ${atRisk.map(a=>a.name).join(', ')}.`,type:'amber'});
+  const nc=dr.filter(r=>!r.comment||!r.comment.trim());
+  if(nc.length)pts.push({icon:'ti-message-off',text:`${nc.length} class${nc.length>1?'es':''} without a lesson comment.`,type:'amber'});
+  if(!pts.length)pts.push({icon:'ti-thumb-up',text:'All registers submitted, no flags today.',type:'green'});
+  return pts;
+}
+
+function clHtml(items,pfx){return items.map((item,i)=>`<li id="${pfx}${i}" onclick="toggleCheck(this)"><input type="checkbox"><span>${item}</span></li>`).join('');}
+function toggleCheck(li){const cb=li.querySelector('input');cb.checked=!cb.checked;li.classList.toggle('done',cb.checked);}
+
+/* ── Daily render ── */
+async function renderDaily(dateStr){
+  const el=document.getElementById('dailyContent');
+  const dr=getDateRecs(dateStr);
+  const rate=attendanceRate(dr),abs=absents(dr),lts=lates(dr),pts=pointers(dr);
+  const tsum=TEACHERS.map(t=>{const tr=dr.filter(r=>r.teacher===t);return{t,r:attendanceRate(tr),n:tr.length};}).filter(x=>x.n>0);
+
+  // Update banner
+  document.getElementById('greetSub').textContent=`${dr.length} classes · ${rateLabel(rate)} attendance · ${abs.length} absent`;
+  if(dr.length){
+    document.getElementById('bannerPills').innerHTML=`<div class="pill">${dr.length} classes</div><div class="pill">${rateLabel(rate)}</div><div class="pill">${abs.length} absent</div>`;
+  }
+
+  let h=`<div class="metric-row">
+    <div class="metric"><div class="lbl">Classes</div><div class="val">${dr.length}</div></div>
+    <div class="metric"><div class="lbl">Attendance</div><div class="val ${rateColor(rate)}">${rateLabel(rate)}</div></div>
+    <div class="metric"><div class="lbl">Absences</div><div class="val ${abs.length>3?'red':abs.length>0?'amber':'green'}">${abs.length}</div></div>
+    <div class="metric"><div class="lbl">Late</div><div class="val ${lts.length>0?'amber':'green'}">${lts.length}</div></div>
+    <div class="metric"><div class="lbl">Teachers</div><div class="val">${tsum.length}</div></div>
+  </div>`;
+
+  h+=`<div class="slbl">Discussion pointers</div><div class="card"><ul class="ptr-list">${ptrHtml(pts)}</ul></div>`;
+
+  if(tsum.length){
+    h+=`<div class="slbl">Per-teacher breakdown</div><div class="card">`;
+    tsum.forEach(({t,r})=>{h+=`<div class="week-row"><span style="font-weight:600">${t}</span><div class="bar-wrap"><div class="bar-fill" style="width:${r||0}%;background:${r?barColor(r):'#ccc'}"></div></div><span class="badge ${rateColor(r)}">${rateLabel(r)}</span></div>`;});
+    h+=`</div>`;
+  }
+
+  if(abs.length){h+=`<div class="slbl">Absent students</div><div class="card"><ul class="ptr-list">`;abs.forEach(a=>{h+=`<li><i class="ti ti-user-off pi" style="color:#854F0B"></i><span><strong>${a.name}</strong> · ${a.cls} (${a.teacher})</span></li>`;});h+=`</ul></div>`;}
+
+  const wc=dr.filter(r=>r.comment&&r.comment.trim());
+  h+=`<div class="slbl"><span>AI lesson analysis</span>${wc.length?`<button class="gen-btn" id="genDailyBtn" onclick="runDailyAI('${dateStr}')"><i class="ti ti-sparkles"></i> Generate</button>`:'<span style="font-size:10px;color:#bbb">No comments today</span>'}</div><div id="aiLessons"></div>`;
+  h+=`<div class="slbl"><span>Head teacher alert</span>${wc.length?`<button class="gen-btn" id="genAlertBtn" onclick="runDailyAlert('${dateStr}')"><i class="ti ti-bell"></i> Generate</button>`:'<span style="font-size:10px;color:#bbb">No comments to analyse</span>'}</div><div id="alertSection"></div>`;
+
+  const cl=['Review all lesson comments and flag concerns'];
+  const noFB=dr.filter(r=>!allFeedback.find(f=>f.recordId===r.id));
+  if(noFB.length)cl.push(`Send feedback on ${noFB.length} unanswered lesson${noFB.length>1?'s':''}`);
+  if(abs.length)cl.push(`Chase absence notes: ${abs.slice(0,3).map(a=>a.name).join(', ')}${abs.length>3?` +${abs.length-3} more`:''}`);
+  if(lts.length)cl.push(`Note lateness: ${lts.map(a=>a.name).join(', ')}`);
+  cl.push('Check hours log for teaching hours today');
+  h+=`<div class="slbl">Action checklist</div><div class="card"><ul class="checklist">${clHtml(cl,'dcl')}</ul></div>`;
+  el.innerHTML=h;
+}
+
+async function runDailyAI(dateStr){
+  const btn=document.getElementById('genDailyBtn');
+  const el=document.getElementById('aiLessons');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
+  el.innerHTML='<div class="spinner">Analysing lesson comments…</div>';
+  const recs=getDateRecs(dateStr).filter(r=>r.comment&&r.comment.trim());
+  const results=await Promise.all(recs.map(r=>genLessonFeedback(r).then(ai=>({r,ai}))));
+  let h='';
+  results.forEach(({r,ai})=>{
+    h+=`<div class="lc"><div class="lc-head"><span class="lc-title">${r.teacher} · ${r.group||r.className||''}</span><span class="badge purple">${ai.style||''}</span></div>
+    <div class="lc-comment">"${r.comment}"</div>
+    <div class="ai-block"><div class="ai-lbl">Pedagogical analysis</div>${ai.analysis||'—'}</div>`;
+    if(ai.followup)h+=`<div class="ai-followup">🔄 ${ai.followup}</div>`;
+    h+=`</div>`;
+  });
+  el.innerHTML=h||'<p style="font-size:12px;color:#aaa">No comments found.</p>';
+  btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Regenerate';
+}
+
+async function runDailyAlert(dateStr){
+  const btn=document.getElementById('genAlertBtn');
+  const el=document.getElementById('alertSection');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
+  el.innerHTML='<div class="spinner">Generating head teacher alert…</div>';
+  const a=await genDailyAlert(getDateRecs(dateStr));
+  el.innerHTML=`<div class="card">${alertHtml(a)}</div>`;
+  btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Regenerate';
+}
+
+/* ── Weekly render ── */
+async function renderWeekly(mon,sun){
+  const el=document.getElementById('weeklyContent');
+  const wr=getWeekRecs(mon,sun);
+  const rate=attendanceRate(wr),abs=absents(wr),lts=lates(wr);
+  const byDay={};wr.forEach(r=>{if(!byDay[r.date])byDay[r.date]=[];byDay[r.date].push(r);});
+  const tw=TEACHERS.map(t=>{const tr=wr.filter(r=>r.teacher===t);return{t,r:attendanceRate(tr),n:tr.length};}).filter(x=>x.n>0);
+  const rep={};wr.forEach(r=>(r.students||[]).filter(s=>s.status==='absent').forEach(s=>{rep[s.name]=(rep[s.name]||0)+1;}));
+  const atRisk=Object.entries(rep).filter(([,v])=>v>=2).map(([k])=>k);
+  const pts=[];
+  if(rate!==null){if(rate<75)pts.push({icon:'ti-alert-triangle',text:`Weekly average below target (${rate}%).`,type:'red'});else pts.push({icon:'ti-circle-check',text:`Good week: ${rate}% average.`,type:'green'});}
+  if(atRisk.length)pts.push({icon:'ti-user-exclamation',text:`Absent 2+ times: ${atRisk.slice(0,4).join(', ')}.`,type:'amber'});
+
+  let h=`<div class="metric-row">
+    <div class="metric"><div class="lbl">Classes</div><div class="val">${wr.length}</div></div>
+    <div class="metric"><div class="lbl">Weekly rate</div><div class="val ${rateColor(rate)}">${rateLabel(rate)}</div></div>
+    <div class="metric"><div class="lbl">Absences</div><div class="val ${abs.length>10?'red':abs.length>4?'amber':'green'}">${abs.length}</div></div>
+    <div class="metric"><div class="lbl">Teachers</div><div class="val">${tw.length}</div></div>
+  </div>`;
+
+  h+=`<div class="slbl">Pointers</div><div class="card"><ul class="ptr-list">${ptrHtml(pts)}</ul></div>`;
+  h+=`<div class="slbl">Teacher performance</div><div class="card">`;
+  tw.forEach(({t,r})=>{h+=`<div class="week-row"><span style="font-weight:600">${t}</span><div class="bar-wrap"><div class="bar-fill" style="width:${r||0}%;background:${r?barColor(r):'#ccc'}"></div></div><span class="badge ${rateColor(r)}">${rateLabel(r)}</span></div>`;});
+  h+=`</div>`;
+  h+=`<div class="slbl">Day-by-day</div><div class="card">`;
+  Object.keys(byDay).sort().forEach(day=>{const dr=attendanceRate(byDay[day]);const dn=new Date(day+'T12:00:00');h+=`<div class="week-row"><span style="color:#aaa">${DAYS[dn.getDay()].slice(0,3)} ${fmtShort(dn)}</span><div class="bar-wrap"><div class="bar-fill" style="width:${dr||0}%;background:${dr?barColor(dr):'#ccc'}"></div></div><span class="badge ${rateColor(dr)}">${rateLabel(dr)}</span></div>`;});
+  if(!Object.keys(byDay).length)h+=`<p style="font-size:12px;color:#aaa">No records this week.</p>`;
+  h+=`</div>`;
+  h+=`<div class="slbl"><span>Weekly AI analysis &amp; alert</span><button class="gen-btn" id="genWeeklyBtn" onclick="runWeeklyAlert()"><i class="ti ti-sparkles"></i> Generate</button></div><div id="weeklyAlertSection"></div>`;
+
+  const cl=['Review weekly attendance rates per teacher','Follow up on teachers with <75% this week','Review all lesson comments for the week','Contact families of at-risk students','Confirm next week\'s schedule','Check pending exam enrolment deadlines'];
+  h+=`<div class="slbl">Weekly checklist</div><div class="card"><ul class="checklist">${clHtml(cl,'wcl')}</ul></div>`;
+  el.innerHTML=h;
+  window._weekRecs=wr;
+}
+
+async function runWeeklyAlert(){
+  const btn=document.getElementById('genWeeklyBtn');
+  const el=document.getElementById('weeklyAlertSection');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
+  el.innerHTML='<div class="spinner">Generating weekly analysis…</div>';
+  const a=await genWeeklyAlert(window._weekRecs||[]);
+  el.innerHTML=`<div class="card">${alertHtml(a)}</div>`;
+  btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Regenerate';
+}
+
+/* ── Teacher view ── */
+function renderTeacherGrid(){
+  const{mon,sun}=getWeekRange(new Date(reportDate+'T12:00:00'));
+  const wr=getWeekRecs(mon,sun);
+  let h='';
+  TEACHERS.forEach(t=>{const tr=wr.filter(r=>r.teacher===t);const r=attendanceRate(tr);h+=`<div class="t-card${selectedTeacher===t?' sel':''}" onclick="selectTeacher('${t}')"><div class="t-name">${t}</div><div class="t-meta">${tr.length} class${tr.length!==1?'es':''} · <span style="font-weight:600;color:${r===null?'#185FA5':r>=85?'#3B6D11':r>=70?'#854F0B':'#A32D2D'}">${rateLabel(r)}</span></div></div>`;});
+  document.getElementById('teacherGrid').innerHTML=h;
+}
+
+async function selectTeacher(name){
+  selectedTeacher=name;renderTeacherGrid();
+  const{mon,sun}=getWeekRange(new Date(reportDate+'T12:00:00'));
+  const wr=getWeekRecs(mon,sun).filter(r=>r.teacher===name);
+  const dr=getDateRecs(reportDate).filter(r=>r.teacher===name);
+  const rate=attendanceRate(wr),abs=absents(wr),lts=lates(wr);
+  const byDay={};wr.forEach(r=>{if(!byDay[r.date])byDay[r.date]=[];byDay[r.date].push(r);});
+  let pts=[];
+  if(!dr.length)pts.push({icon:'ti-calendar-off',text:'No classes registered today.',type:'blue'});
+  else{
+    const a=absents(dr);if(a.length)pts.push({icon:'ti-user-off',text:`${a.length} absent today: ${a.map(x=>x.name).join(', ')}.`,type:'amber'});
+    const nc=dr.filter(r=>!r.comment||!r.comment.trim());if(nc.length)pts.push({icon:'ti-message-off',text:`Lesson comment missing for ${nc.length} class${nc.length>1?'es':''}.`,type:'red'});
+    if(!pts.length)pts.push({icon:'ti-thumb-up',text:'All good today.',type:'green'});
+  }
+
+  let h=`<div class="card" style="margin-top:.85rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+      <h3>${name} · ${fmtShort(mon)}–${fmtShort(sun)}</h3>
+      <div style="display:flex;gap:6px">
+        <button class="gen-btn" id="genTBtn" onclick="runTeacherAI('${name}','${reportDate}')"><i class="ti ti-sparkles"></i> AI analysis</button>
+        <button class="icon-btn" onclick="copyTeacherReport('${name}')"><i class="ti ti-copy"></i> Share</button>
+      </div>
+    </div>
+    <div class="metric-row">
+      <div class="metric"><div class="lbl">Classes</div><div class="val">${wr.length}</div></div>
+      <div class="metric"><div class="lbl">Weekly rate</div><div class="val ${rateColor(rate)}">${rateLabel(rate)}</div></div>
+      <div class="metric"><div class="lbl">Absences</div><div class="val ${abs.length>3?'red':abs.length>0?'amber':'green'}">${abs.length}</div></div>
+      <div class="metric"><div class="lbl">Late</div><div class="val ${lts.length>0?'amber':'green'}">${lts.length}</div></div>
+    </div>
+    <div class="slbl">Today's notes</div>
+    <ul class="ptr-list">${ptrHtml(pts)}</ul>
+    <hr class="div">
+    <div class="slbl">Day-by-day</div>`;
+
+  Object.keys(byDay).sort().forEach(day=>{
+    const dr2=attendanceRate(byDay[day]);const dn=new Date(day+'T12:00:00');const da=absents(byDay[day]);
+    h+=`<div class="week-row"><span style="color:#aaa">${DAYS[dn.getDay()].slice(0,3)} ${fmtShort(dn)}</span><div class="bar-wrap"><div class="bar-fill" style="width:${dr2||0}%;background:${dr2?barColor(dr2):'#ccc'}"></div></div><span class="badge ${rateColor(dr2)}">${rateLabel(dr2)}</span></div>`;
+    if(da.length)h+=`<p style="font-size:11px;color:#aaa;padding:1px 0 5px">Absent: ${da.map(a=>a.name).join(', ')}</p>`;
+  });
+  if(!Object.keys(byDay).length)h+=`<p style="font-size:12px;color:#aaa">No classes this week.</p>`;
+
+  h+=`<div id="teacherAIBlock"></div>
+    <hr class="div">
+    <div class="slbl">Checklist</div>
+    <ul class="checklist">
+      <li onclick="toggleCheck(this)"><input type="checkbox"><span>Submit lesson comments for today's classes</span></li>
+      <li onclick="toggleCheck(this)"><input type="checkbox"><span>Note absence reasons received from families</span></li>
+      <li onclick="toggleCheck(this)"><input type="checkbox"><span>Log teaching hours for today</span></li>
+      <li onclick="toggleCheck(this)"><input type="checkbox"><span>Check admin messages and feedback</span></li>
+    </ul>
+  </div>`;
+  document.getElementById('teacherDetail').innerHTML=h;
+}
+
+async function runTeacherAI(name,dateStr){
+  const btn=document.getElementById('genTBtn');
+  const el=document.getElementById('teacherAIBlock');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
+  el.innerHTML='<div class="spinner" style="padding:.75rem">Analysing…</div>';
+  const{mon,sun}=getWeekRange(new Date(dateStr+'T12:00:00'));
+  const recs=getWeekRecs(mon,sun).filter(r=>r.teacher===name&&r.comment&&r.comment.trim());
+  if(!recs.length){el.innerHTML='';btn.disabled=false;btn.innerHTML='<i class="ti ti-sparkles"></i> AI analysis';return;}
+  const results=await Promise.all(recs.map(r=>genLessonFeedback(r).then(ai=>({r,ai}))));
+  let h=`<hr class="div"><div class="slbl"><span class="note-tag">Admin only</span> AI lesson analysis</div>`;
+  results.forEach(({r,ai})=>{
+    h+=`<div class="lc"><div class="lc-head"><span class="lc-title">${r.group||r.className||''} · ${r.date}</span><span class="badge purple">${ai.style||''}</span></div>
+    <div class="lc-comment">"${r.comment}"</div>
+    <div class="ai-block"><div class="ai-lbl">Pedagogical analysis</div>${ai.analysis||'—'}</div>`;
+    if(ai.followup)h+=`<div class="ai-followup">🔄 ${ai.followup}</div>`;
+    h+=`</div>`;
+  });
+  el.innerHTML=h;btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Regenerate';
+}
+
+function copyTeacherReport(name){
+  const{mon,sun}=getWeekRange(new Date(reportDate+'T12:00:00'));
+  const wr=getWeekRecs(mon,sun).filter(r=>r.teacher===name);
+  const rate=attendanceRate(wr),abs=absents(wr);
+  const text=`English with John — Weekly report for ${name}\nWeek: ${fmtShort(mon)}–${fmtShort(sun)}\n\nClasses: ${wr.length} | Attendance: ${rateLabel(rate)} | Absences: ${abs.length}\n${abs.length?'\nAbsent this week:\n'+abs.map(a=>`- ${a.name} (${a.cls})`).join('\n')+'\n':''}\nYour checklist:\n• Submit lesson comments for all classes\n• Note absence reasons from families\n• Log teaching hours\n• Check admin messages`;
+  navigator.clipboard.writeText(text).catch(()=>{});
+  alert('Shareable report copied.\n(No AI analysis or alerts — safe to send to the teacher.)');
+}
+
+/* ── Navigation ── */
+function switchPage(page){
+  document.querySelectorAll('.nav-tab').forEach((t,i)=>t.classList.toggle('active',['reports','links'][i]===page));
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('visible',p.id===page));
+}
+
+function switchRTab(tab){
+  document.querySelectorAll('.rtab').forEach((t,i)=>t.classList.toggle('active',['daily','weekly','teacher'][i]===tab));
+  document.querySelectorAll('.rsection').forEach(s=>s.classList.toggle('visible',s.id===tab));
+  if(tab==='teacher')renderTeacherGrid();
+}
+
+async function refreshAll(){
+  ['dailyContent','weeklyContent'].forEach(id=>document.getElementById(id).innerHTML='<div class="spinner"><i class="ti ti-loader"></i> Refreshing…</div>');
+  aiCache={};await loadAll();buildReports();
+}
+
+function buildReports(){
+  const picker=document.getElementById('datePicker');
+  const y=new Date();y.setDate(y.getDate()-1);
+  reportDate=picker.value||fmt(y);picker.value=reportDate;
+  const{mon,sun}=getWeekRange(new Date(reportDate+'T12:00:00'));
+  renderDaily(reportDate);renderWeekly(mon,sun);
+  if(selectedTeacher)selectTeacher(selectedTeacher);else renderTeacherGrid();
+}
+
+document.getElementById('datePicker').addEventListener('change',buildReports);
+
+/* ── Init ── */
+initClock();
+loadAll().then(buildReports);
+</script>
+</body>
+</html>
