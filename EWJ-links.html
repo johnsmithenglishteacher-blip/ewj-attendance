@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EWJ Tools & Links</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;padding:24px;max-width:700px;margin:0 auto;}
+  h1{font-size:22px;font-weight:800;margin-bottom:4px;color:#1e293b;}
+  .sub{font-size:13px;color:#94a3b8;margin-bottom:24px;}
+  .section{margin-bottom:20px;}
+  .section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;}
+  .link-card{display:flex;align-items:center;gap:12px;background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:8px;text-decoration:none;color:#1e293b;transition:border-color .15s;}
+  .link-card:hover{border-color:#4f46e5;background:#fafafa;}
+  .icon{font-size:20px;flex-shrink:0;width:32px;text-align:center;}
+  .link-title{font-weight:600;font-size:14px;margin-bottom:2px;}
+  .link-desc{font-size:12px;color:#94a3b8;}
+  .divider{border:none;border-top:1.5px solid #f1f5f9;margin:20px 0;}
+  .tool-card{background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;}
+  .tool-card .icon{font-size:20px;flex-shrink:0;width:32px;text-align:center;}
+  .tool-info{flex:1;}
+  .tool-title{font-weight:600;font-size:14px;margin-bottom:2px;}
+  .tool-desc{font-size:12px;color:#94a3b8;}
+  .note{font-size:11px;color:#64748b;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-top:16px;line-height:1.6;}
+</style>
+</head>
+<body>
+
+<h1>📋 English with John</h1>
+<p class="sub">Attendance system — quick access links</p>
+
+<div class="section">
+  <div class="section-title">🌐 Live form</div>
+  <a class="link-card" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/" target="_blank">
+    <span class="icon">📋</span>
+    <div><div class="link-title">Attendance Register</div><div class="link-desc">johnsmithenglishteacher-blip.github.io/ewj-attendance</div></div>
+  </a>
+  <a class="link-card" href="https://englishwithjohn.es/attendance-register/" target="_blank">
+    <span class="icon">🔒</span>
+    <div><div class="link-title">WordPress page (password protected)</div><div class="link-desc">englishwithjohn.es/attendance-register</div></div>
+  </a>
+</div>
+
+<div class="section">
+  <div class="section-title">⚙️ Admin & hosting</div>
+  <a class="link-card" href="https://github.com/johnsmithenglishteacher-blip/ewj-attendance" target="_blank">
+    <span class="icon">💻</span>
+    <div><div class="link-title">GitHub repository</div><div class="link-desc">Upload new index.html here to update the form</div></div>
+  </a>
+  <a class="link-card" href="https://console.firebase.google.com/project/emglish-with-john/database/emglish-with-john-default-rtdb/data" target="_blank">
+    <span class="icon">🔥</span>
+    <div><div class="link-title">Firebase database</div><div class="link-desc">Where all attendance data is stored — lock rules at end of year</div></div>
+  </a>
+  <a class="link-card" href="https://console.anthropic.com" target="_blank">
+    <span class="icon">🤖</span>
+    <div><div class="link-title">Claude API console</div><div class="link-desc">Manage API key and credits for feedback generator</div></div>
+  </a>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-title">🛠 Tools</div>
+  <a class="link-card" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/feedback-generator.html" target="_blank">
+    <span class="icon">📝</span>
+    <div><div class="link-title">Feedback Generator</div><div class="link-desc">AI feedback tool — generates feedback for teacher comments using Claude API</div></div>
+  </a>
+  <a class="link-card" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/cleanup.html" target="_blank">
+    <span class="icon">🧹</span>
+    <div><div class="link-title">Cleanup Tool</div><div class="link-desc">Removes duplicate records from Firebase — run if duplicates appear</div></div>
+  </a>
+  <a class="link-card" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/EWJ-links.html" target="_blank">
+    <span class="icon">🔗</span>
+    <div><div class="link-title">EWJ Links (this page)</div><div class="link-desc">Keep this bookmarked for quick access to all tools</div></div>
+  </a>
+</div>
+
+<div class="note">
+  <strong>End of course checklist:</strong><br>
+  🔒 Lock Firebase rules — go to Firebase → Realtime Database → Rules → set <code>.read</code> and <code>.write</code> to <code>false</code><br>
+  📥 Export final CSV from History tab for your records<br>
+  🔑 API key stored safely — <strong>never share it</strong>
+</div>
+
+</body>
+</html>
