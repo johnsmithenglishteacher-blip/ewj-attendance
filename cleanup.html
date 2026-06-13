@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EWJ Cleanup Tool</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;padding:24px;max-width:700px;margin:0 auto;}
+  h1{font-size:20px;font-weight:800;margin-bottom:4px;}
+  .sub{font-size:13px;color:#94a3b8;margin-bottom:20px;}
+  .card{background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:16px;}
+  .card-title{font-weight:700;font-size:14px;margin-bottom:8px;}
+  input[type=text]{width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:monospace;outline:none;margin-bottom:10px;}
+  input[type=text]:focus{border-color:#4f46e5;}
+  .btn{border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-family:inherit;font-weight:600;cursor:pointer;margin-right:8px;margin-bottom:8px;}
+  .btn-primary{background:#4f46e5;color:#fff;}
+  .btn-danger{background:#dc2626;color:#fff;}
+  .btn-gray{background:#f1f5f9;color:#475569;border:1.5px solid #e2e8f0;}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;}
+  #log{background:#1e293b;color:#94a3b8;border-radius:8px;padding:14px;font-size:12px;font-family:monospace;min-height:120px;max-height:300px;overflow-y:auto;white-space:pre-wrap;margin-bottom:16px;}
+  .stats{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
+  .stat{background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px 18px;text-align:center;}
+  .stat-n{font-size:24px;font-weight:700;}
+  .stat-l{font-size:11px;color:#64748b;margin-top:2px;}
+  .warn{background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;padding:12px;font-size:13px;color:#854d0e;margin-bottom:16px;}
+  .success{background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:12px;font-size:13px;color:#15803d;margin-bottom:16px;display:none;}
+</style>
+</head>
+<body>
+
+<h1>🧹 EWJ Cleanup Tool</h1>
+<p class="sub">Remove duplicate records from Firebase attendance database</p>
+
+<div class="card">
+  <div class="card-title">Firebase DB URL</div>
+  <input type="text" id="fbUrl" value="https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app">
+  <button class="btn btn-primary" onclick="scanDuplicates()">🔍 Scan for duplicates</button>
+</div>
+
+<div id="statsDiv" style="display:none">
+  <div class="stats" id="statsEl"></div>
+
+  <div class="warn" id="warnEl"></div>
+
+  <div id="log">Ready to scan...</div>
+
+  <div id="duplicateList"></div>
+
+  <button class="btn btn-danger" id="cleanBtn" onclick="cleanDuplicates()" style="display:none">🧹 Remove all duplicates</button>
+  <button class="btn btn-gray" onclick="scanDuplicates()">🔄 Rescan</button>
+
+  <div class="success" id="successEl">✅ Cleanup complete! All duplicates removed.</div>
+</div>
+
+<script>
+const FB_URL = () => document.getElementById('fbUrl').value.trim();
+
+let allRecords = {};
+let duplicateGroups = [];
+
+function log(msg) {
+  const el = document.getElementById('log');
+  el.textContent += '\n' + new Date().toLocaleTimeString() + ' — ' + msg;
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('log').textContent = '';
+}
+
+async function scanDuplicates() {
+  clearLog();
+  document.getElementById('statsDiv').style.display = '';
+  document.getElementById('successEl').style.display = 'none';
+  document.getElementById('cleanBtn').style.display = 'none';
+  document.getElementById('duplicateList').innerHTML = '';
+
+  log('Loading records from Firebase...');
+
+  try {
+    const res = await fetch(FB_URL() + '/records.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+
+    if (!data) { log('No records found.'); return; }
+
+    allRecords = data;
+    const records = Object.entries(data).map(([key, val]) => ({ key, ...val })).filter(r => r && r.teacher);
+
+    log(`Loaded ${records.length} total records.`);
+
+    // Find duplicates: same teacher + date + time + course
+    const groups = {};
+    records.forEach(r => {
+      const sig = [r.teacher, r.date, r.time, r.course].join('|');
+      if (!groups[sig]) groups[sig] = [];
+      groups[sig].push(r);
+    });
+
+    duplicateGroups = Object.values(groups).filter(g => g.length > 1);
+    const dupCount = duplicateGroups.reduce((sum, g) => sum + g.length - 1, 0);
+
+    log(`Found ${duplicateGroups.length} duplicate groups (${dupCount} extra records to remove).`);
+
+    document.getElementById('statsEl').innerHTML = `
+      <div class="stat"><div class="stat-n" style="color:#475569">${records.length}</div><div class="stat-l">Total records</div></div>
+      <div class="stat"><div class="stat-n" style="color:#dc2626">${duplicateGroups.length}</div><div class="stat-l">Duplicate groups</div></div>
+      <div class="stat"><div class="stat-n" style="color:#f59e0b">${dupCount}</div><div class="stat-l">Records to remove</div></div>
+    `;
+
+    if (duplicateGroups.length === 0) {
+      document.getElementById('warnEl').style.display = 'none';
+      log('✅ No duplicates found — database is clean!');
+      return;
+    }
+
+    document.getElementById('warnEl').style.display = '';
+    document.getElementById('warnEl').textContent = `⚠️ Found ${dupCount} duplicate record(s) across ${duplicateGroups.length} group(s). Review below, then click "Remove all duplicates" to clean up. The record with the most complete data (longest comment / most students) will be kept.`;
+
+    // Show duplicate groups
+    const list = document.getElementById('duplicateList');
+    duplicateGroups.forEach((group, i) => {
+      const div = document.createElement('div');
+      div.className = 'card';
+      div.style.marginBottom = '10px';
+      div.innerHTML = `<div class="card-title" style="color:#dc2626">Group ${i+1}: ${group[0].teacher} · ${group[0].course} · ${group[0].date} ${group[0].time}</div>` +
+        group.map((r, j) => {
+          const keep = j === pickKeeper(group);
+          return `<div style="font-size:12px;padding:6px 10px;border-radius:6px;margin-top:6px;background:${keep ? '#f0fdf4' : '#fef2f2'};border:1px solid ${keep ? '#86efac' : '#fca5a5'}">
+            <strong>${keep ? '✅ KEEP' : '🗑 REMOVE'}</strong> — key: ${r.key} — comment: "${(r.comment || '').substring(0, 60)}..." — students: ${(r.students || []).length}
+          </div>`;
+        }).join('');
+      list.appendChild(div);
+    });
+
+    document.getElementById('cleanBtn').style.display = '';
+
+  } catch(e) {
+    log('Error: ' + e.message);
+  }
+}
+
+function pickKeeper(group) {
+  // Keep the record with the longest comment, or most students, or latest key
+  let best = 0;
+  let bestScore = -1;
+  group.forEach((r, i) => {
+    const score = (r.comment || '').length * 10 + (r.students || []).length;
+    if (score > bestScore) { bestScore = score; best = i; }
+  });
+  return best;
+}
+
+async function cleanDuplicates() {
+  const btn = document.getElementById('cleanBtn');
+  btn.disabled = true;
+  btn.textContent = 'Removing...';
+  log('Starting cleanup...');
+
+  let removed = 0;
+  for (const group of duplicateGroups) {
+    const keepIdx = pickKeeper(group);
+    for (let i = 0; i < group.length; i++) {
+      if (i === keepIdx) continue;
+      const r = group[i];
+      log(`Removing duplicate: ${r.key} (${r.teacher} · ${r.course} · ${r.date})`);
+      try {
+        const res = await fetch(FB_URL() + '/records/' + r.key + '.json', { method: 'DELETE' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        removed++;
+      } catch(e) {
+        log('Failed to remove ' + r.key + ': ' + e.message);
+      }
+    }
+  }
+
+  log(`Done! Removed ${removed} duplicate records.`);
+  document.getElementById('successEl').style.display = '';
+  btn.disabled = false;
+  btn.textContent = '🧹 Remove all duplicates';
+
+  // Rescan to confirm
+  setTimeout(scanDuplicates, 1500);
+}
+</script>
+</body>
+</html>
