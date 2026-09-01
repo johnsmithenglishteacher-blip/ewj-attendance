@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EWJ Reports</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;color:#1a1a1a;background:#f5f5f0;padding:1.5rem}
+.top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
+.top-bar h1{font-size:20px;font-weight:600}
+.sub{font-size:13px;color:#666;margin-top:2px}
+.tabs{display:flex;gap:6px;margin-bottom:1.25rem}
+.tab{padding:7px 18px;border-radius:8px;border:1px solid #ddd;background:#fff;cursor:pointer;font-size:13px;color:#555}
+.tab.active{background:#185FA5;color:#fff;border-color:#185FA5;font-weight:500}
+.section{display:none}.section.visible{display:block}
+.metric-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:1.25rem}
+.metric{background:#fff;border-radius:8px;border:1px solid #e8e8e8;padding:.9rem 1rem}
+.metric .lbl{font-size:12px;color:#888;margin-bottom:4px}
+.metric .val{font-size:22px;font-weight:600}
+.val.green{color:#3B6D11}.val.amber{color:#854F0B}.val.red{color:#A32D2D}.val.blue{color:#185FA5}
+.card{background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem}
+.card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem}
+.card-head h3{font-size:15px;font-weight:600}
+.slbl{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin:1rem 0 .5rem}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500}
+.badge.green{background:#EAF3DE;color:#3B6D11}.badge.amber{background:#FAEEDA;color:#854F0B}
+.badge.red{background:#FCEBEB;color:#A32D2D}.badge.blue{background:#E6F1FB;color:#185FA5}
+.badge.purple{background:#EEEDFE;color:#534AB7}
+.ptr-list{list-style:none}
+.ptr-list li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
+.ptr-list li:last-child{border-bottom:none}
+.pi{font-size:16px;flex-shrink:0;margin-top:2px}
+.checklist{list-style:none}
+.checklist li{display:flex;align-items:flex-start;gap:10px;padding:7px 0;font-size:13px;border-bottom:1px solid #f0f0f0;cursor:pointer}
+.checklist li:last-child{border-bottom:none}
+.checklist li input{margin-top:2px;flex-shrink:0;width:15px;height:15px;cursor:pointer;accent-color:#185FA5}
+.checklist li.done{color:#aaa;text-decoration:line-through}
+.bar-wrap{height:8px;background:#f0f0f0;border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px}
+.week-row{display:grid;grid-template-columns:120px 1fr 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
+.week-row:last-child{border-bottom:none}
+.t-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:1.25rem}
+.t-card{background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:.9rem 1rem;cursor:pointer;transition:border-color .15s}
+.t-card:hover{border-color:#185FA5}.t-card.sel{border:2px solid #185FA5}
+.t-name{font-weight:600;font-size:14px;margin-bottom:4px}
+.t-meta{font-size:12px;color:#888}
+.spinner{text-align:center;padding:2rem;color:#888;font-size:14px}
+.ai-block{background:#EEEDFE;border-left:3px solid #534AB7;border-radius:0 8px 8px 0;padding:.75rem 1rem;margin:.5rem 0;font-size:13px;line-height:1.65}
+.ai-block .ai-lbl{font-size:11px;font-weight:600;color:#534AB7;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+.ai-followup{background:#E6F1FB;border-left:3px solid #185FA5;border-radius:0 8px 8px 0;padding:.6rem .9rem;margin-top:.5rem;font-size:12px;color:#185FA5}
+.alert-block{border-radius:8px;padding:.75rem 1rem;margin:.4rem 0;font-size:13px}
+.alert-block.high{background:#FAEEDA;border-left:3px solid #854F0B}
+.alert-block.positive{background:#EAF3DE;border-left:3px solid #3B6D11}
+.alert-block .alert-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.alert-block.high .alert-lbl{color:#854F0B}
+.alert-block.positive .alert-lbl{color:#3B6D11}
+.gen-btn{background:#EEEDFE;border:1px solid #534AB7;color:#534AB7;border-radius:8px;padding:5px 14px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.gen-btn:hover{background:#534AB7;color:#fff}
+.gen-btn:disabled{opacity:.5;cursor:not-allowed}
+.share-btn{background:#fff;border:1px solid #ddd;border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer;color:#555;display:inline-flex;align-items:center;gap:5px}
+.share-btn:hover{background:#f5f5f0}
+select,input[type=date]{border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;color:#1a1a1a;cursor:pointer}
+hr.div{border:none;border-top:1px solid #f0f0f0;margin:1rem 0}
+.lesson-card{border:1px solid #e8e8e8;border-radius:10px;padding:.75rem 1rem;margin-bottom:.75rem}
+.lesson-card .lc-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem}
+.lesson-card .lc-title{font-weight:600;font-size:14px}
+.lesson-card .lc-comment{font-size:13px;color:#666;font-style:italic;margin-bottom:.5rem;line-height:1.55}
+.note-tag{display:inline-block;background:#f5f5f0;border:1px solid #e0e0e0;border-radius:4px;font-size:11px;padding:2px 7px;color:#555;margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div>
+    <div style="font-size:12px;color:#888;margin-bottom:3px">English with John · Reports</div>
+    <h1>Daily &amp; weekly reports</h1>
+    <div class="sub" id="dateLabel">Loading…</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <input type="date" id="datePicker">
+    <button class="share-btn" onclick="refreshAll()"><i class="ti ti-refresh"></i> Refresh</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('daily')">Daily report</button>
+  <button class="tab" onclick="switchTab('weekly')">Weekly report</button>
+  <button class="tab" onclick="switchTab('teacher')">Teacher view</button>
+</div>
+
+<div id="daily" class="section visible">
+  <div id="dailyContent"><div class="spinner"><i class="ti ti-loader"></i> Loading…</div></div>
+</div>
+<div id="weekly" class="section">
+  <div id="weeklyContent"><div class="spinner"><i class="ti ti-loader"></i> Loading…</div></div>
+</div>
+<div id="teacher" class="section">
+  <p style="font-size:13px;color:#888;margin-bottom:1rem">Select a teacher to see their report. The shareable copy excludes AI analysis and alerts.</p>
+  <div class="t-grid" id="teacherGrid"></div>
+  <div id="teacherDetail"></div>
+</div>
+
+<script>
+const FB='https://ewj-attendance-default-rtdb.firebaseio.com';
+const TEACHERS=['Anna','Chaymae','Clara','John','Lucy','Mary','Mireia','Prosper'];
+const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const STYLES=['Learning Analysis & Early Language Development','Student Confidence & Adaptability','Assessment & Exam Coaching','Leadership & Teamwork','Communicative Fluency & Interaction','Grammar & Accuracy Focus','Creative & Productive Skills'];
+
+let allRecords=[],allFeedback=[],aiCache={},selectedTeacher=null,reportDate=null;
+
+const fmt=d=>d.toISOString().split('T')[0];
+const fmtDisp=d=>d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+const fmtShort=d=>d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+const rateColor=r=>r===null?'blue':r>=85?'green':r>=70?'amber':'red';
+const rateLabel=r=>r===null?'No data':r+'%';
+const barColor=r=>r>=85?'#3B6D11':r>=70?'#854F0B':'#A32D2D';
+
+function getWeekRange(d){const day=d.getDay(),mon=new Date(d);mon.setDate(d.getDate()-(day===0?6:day-1));const sun=new Date(mon);sun.setDate(mon.getDate()+6);return{mon,sun};}
+function attendanceRate(recs){const total=recs.reduce((a,r)=>a+(r.students?r.students.length:0),0);const present=recs.reduce((a,r)=>a+(r.students?r.students.filter(s=>s.status==='present').length:0),0);return total>0?Math.round(present/total*100):null;}
+function absents(recs){return recs.flatMap(r=>(r.students||[]).filter(s=>s.status==='absent').map(s=>({name:s.name,cls:r.className||r.group||'',teacher:r.teacher,date:r.date})));}
+function lates(recs){return recs.flatMap(r=>(r.students||[]).filter(s=>s.status==='late').map(s=>({name:s.name,cls:r.className||r.group||'',teacher:r.teacher})));}
+
+async function fetchFB(path){const r=await fetch(`${FB}/${path}.json`);if(!r.ok)throw new Error('Firebase '+r.status);return r.json();}
+async function loadAll(){try{const[recs,fb]=await Promise.all([fetchFB('records'),fetchFB('feedback')]);allRecords=recs?Object.values(recs):[];allFeedback=fb?Object.values(fb):[]}catch(e){allRecords=[];allFeedback=[];}}
+
+function getDateRecs(d){return allRecords.filter(r=>r.date===d);}
+function getWeekRecs(mon,sun){const m=mon.getTime(),s=sun.getTime();return allRecords.filter(r=>{const d=new Date(r.date).getTime();return d>=m&&d<=s;});}
+
+async function callAI(system,userMsg){
+  const key=btoa(userMsg).slice(0,48);
+  if(aiCache[key])return aiCache[key];
+  const res=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,system,messages:[{role:'user',content:userMsg}]})
+  });
+  const data=await res.json();
+  const raw=data.content?.[0]?.text||'{}';
+  try{const p=JSON.parse(raw.replace(/```json|```/g,'').trim());aiCache[key]=p;return p;}
+  catch{return null;}
+}
+
+async function generateLessonFeedback(r){
+  const style=STYLES[Math.floor(Math.random()*STYLES.length)];
+  const ai=await callAI(
+    `You are John's head teacher assistant at English with John academy in Catalonia. Write structured pedagogical feedback on a lesson comment. Respond ONLY with a JSON object (no markdown, no preamble) with keys: "style" (the analysis style used), "analysis" (2-3 sentence pedagogical observation, warm and specific), "followup" (one concrete follow-up starting with "Could you..." or "Next lesson, please..."), "alert" (null OR {type:"high"|"positive", text: one sentence for head teacher}).`,
+    `Teacher: ${r.teacher}\nClass: ${r.group||r.className||''}\nRequested style: ${style}\nLesson comment: "${r.comment}"`
+  );
+  return ai||{style,analysis:'Unable to generate analysis.',followup:null,alert:null};
+}
+
+async function generateDailyAlert(dayRecs){
+  const comments=dayRecs.filter(r=>r.comment&&r.comment.trim()).map(r=>`${r.teacher} · ${r.group||r.className||''}: "${r.comment}"`).join('\n');
+  if(!comments)return null;
+  return callAI(
+    `You are a head teacher assistant. Given lesson comments, produce JSON (no markdown) with: "highPriority": [{student,teacher,text}] max 3 urgent items, "positive": [string] max 4 positive developments, "leadershipNote": one sentence of the most important insight today.`,
+    `Today's lesson comments:\n${comments}`
+  );
+}
+
+async function generateWeeklyAlert(weekRecs){
+  const comments=weekRecs.filter(r=>r.comment&&r.comment.trim()).slice(0,14).map(r=>`${r.teacher} · ${r.group||r.className||''} (${r.date}): "${r.comment}"`).join('\n');
+  if(!comments)return null;
+  return callAI(
+    `You are a head teacher assistant reviewing a full week. Produce JSON (no markdown) with: "weekSummary": 2-sentence pedagogical overview, "highPriority": [{student,teacher,text}] max 3, "positive": [string] max 4, "leadershipNote": one sentence on most important thing to address next week.`,
+    `This week's comments:\n${comments}`
+  );
+}
+
+function alertSectionHtml(alert){
+  if(!alert)return'<p style="font-size:13px;color:#888">No comments to analyse.</p>';
+  let h='';
+  if(alert.weekSummary)h+=`<div class="ai-block" style="margin-bottom:.75rem"><div class="ai-lbl">Week overview</div>${alert.weekSummary}</div>`;
+  if(alert.leadershipNote)h+=`<div class="ai-block" style="margin-bottom:.75rem"><div class="ai-lbl">Leadership note</div>${alert.leadershipNote}</div>`;
+  if(alert.highPriority&&alert.highPriority.length){h+=`<div class="slbl">🟠 High priority</div>`;alert.highPriority.forEach(x=>{h+=`<div class="alert-block high"><div class="alert-lbl">${x.student||''}${x.teacher?' · '+x.teacher:''}</div>${x.text}</div>`;});}
+  if(alert.positive&&alert.positive.length){h+=`<div class="slbl">🟢 Positive developments</div>`;alert.positive.forEach(x=>{h+=`<div class="alert-block positive"><div class="alert-lbl">Positive</div>${x}</div>`;});}
+  return h||'<p style="font-size:13px;color:#888">No significant flags detected.</p>';
+}
+
+function ptrHtml(pts){return pts.map(p=>`<li><i class="ti ${p.icon} pi" style="color:${p.type==='red'?'#A32D2D':p.type==='amber'?'#854F0B':p.type==='green'?'#3B6D11':'#185FA5'}"></i><span>${p.text}</span></li>`).join('');}
+
+function pointers(dateRecs){
+  const pts=[];
+  const rate=attendanceRate(dateRecs);
+  if(rate!==null){if(rate<70)pts.push({icon:'ti-alert-triangle',text:`Overall attendance low today (${rate}%) — note in next team message.`,type:'red'});else if(rate>=90)pts.push({icon:'ti-circle-check',text:`Strong day — ${rate}% attendance across all classes.`,type:'green'});}
+  const repeats={};allRecords.forEach(r=>(r.students||[]).filter(s=>s.status==='absent').forEach(s=>{repeats[s.name]=(repeats[s.name]||0)+1;}));
+  const atRisk=absents(dateRecs).filter(a=>repeats[a.name]>=3);
+  if(atRisk.length)pts.push({icon:'ti-user-exclamation',text:`At-risk students absent today (3+ absences): ${atRisk.map(a=>a.name).join(', ')}.`,type:'amber'});
+  const noComment=dateRecs.filter(r=>!r.comment||!r.comment.trim());
+  if(noComment.length)pts.push({icon:'ti-message-off',text:`${noComment.length} class${noComment.length>1?'es':''} without a lesson comment — follow up.`,type:'amber'});
+  if(!pts.length)pts.push({icon:'ti-thumb-up',text:'All registers submitted, no flags today.',type:'green'});
+  return pts;
+}
+
+function clHtml(items,prefix){return items.map((item,i)=>`<li id="${prefix}${i}" onclick="toggleCheck(this)"><input type="checkbox" aria-label="${item}"><span>${item}</span></li>`).join('');}
+function toggleCheck(li){const cb=li.querySelector('input');cb.checked=!cb.checked;li.classList.toggle('done',cb.checked);}
+
+async function renderDaily(dateStr){
+  const el=document.getElementById('dailyContent');
+  const dr=getDateRecs(dateStr);
+  const rate=attendanceRate(dr),abs=absents(dr),lts=lates(dr),pts=pointers(dr);
+  const tsum=TEACHERS.map(t=>{const tr=dr.filter(r=>r.teacher===t);return{t,r:attendanceRate(tr),classes:tr.length,abs:absents(tr).length};}).filter(x=>x.classes>0);
+
+  let h=`<div class="metric-row">
+    <div class="metric"><div class="lbl">Classes today</div><div class="val">${dr.length}</div></div>
+    <div class="metric"><div class="lbl">Attendance rate</div><div class="val ${rateColor(rate)}">${rateLabel(rate)}</div></div>
+    <div class="metric"><div class="lbl">Absences</div><div class="val ${abs.length>3?'red':abs.length>0?'amber':'green'}">${abs.length}</div></div>
+    <div class="metric"><div class="lbl">Late arrivals</div><div class="val ${lts.length>0?'amber':'green'}">${lts.length}</div></div>
+    <div class="metric"><div class="lbl">Teachers active</div><div class="val">${tsum.length}</div></div>
+  </div>`;
+
+  h+=`<div class="slbl">Discussion pointers</div><div class="card"><ul class="ptr-list">${ptrHtml(pts)}</ul></div>`;
+
+  if(tsum.length){h+=`<div class="slbl">Per-teacher breakdown</div><div class="card">`;tsum.forEach(({t,r})=>{h+=`<div class="week-row"><span style="font-weight:600">${t}</span><div class="bar-wrap"><div class="bar-fill" style="width:${r||0}%;background:${r?barColor(r):'#ccc'}"></div></div><span class="badge ${rateColor(r)}">${rateLabel(r)}</span></div>`;});h+=`</div>`;}
+
+  if(abs.length){h+=`<div class="slbl">Absent students</div><div class="card"><ul class="ptr-list">`;abs.forEach(a=>{h+=`<li><i class="ti ti-user-off pi" style="color:#854F0B"></i><span><strong>${a.name}</strong> · ${a.cls} (${a.teacher})</span></li>`;});h+=`</ul></div>`;}
+
+  const withComments=dr.filter(r=>r.comment&&r.comment.trim());
+  h+=`<div class="slbl" style="display:flex;align-items:center;justify-content:space-between">
+    <span>AI lesson analysis</span>
+    ${withComments.length?`<button class="gen-btn" id="genDailyBtn" onclick="runDailyAI('${dateStr}')"><i class="ti ti-sparkles"></i> Generate feedback</button>`:'<span style="font-size:12px;color:#aaa">No comments today</span>'}
+  </div><div id="aiLessons"></div>`;
+
+  h+=`<div class="slbl" style="display:flex;align-items:center;justify-content:space-between">
+    <span>Head teacher alert</span>
+    ${withComments.length?`<button class="gen-btn" id="genAlertBtn" onclick="runDailyAlert('${dateStr}')"><i class="ti ti-bell"></i> Generate alert</button>`:'<span style="font-size:12px;color:#aaa">No comments to analyse</span>'}
+  </div><div id="alertSection"></div>`;
+
+  const cl=['Review all lesson comments and flag any concerns'];
+  const noFB=dr.filter(r=>!allFeedback.find(f=>f.recordId===r.id));
+  if(noFB.length)cl.push(`Send feedback on ${noFB.length} lesson${noFB.length>1?'s':''} without a reply`);
+  if(abs.length)cl.push(`Chase absence notes: ${abs.slice(0,3).map(a=>a.name).join(', ')}${abs.length>3?` +${abs.length-3} more`:''}`);
+  if(lts.length)cl.push(`Note lateness: ${lts.map(a=>a.name).join(', ')}`);
+  cl.push('Check hours log for all teaching hours today');
+  h+=`<div class="slbl">Action checklist</div><div class="card"><ul class="checklist">${clHtml(cl,'dcl')}</ul></div>`;
+  el.innerHTML=h;
+}
+
+async function runDailyAI(dateStr){
+  const btn=document.getElementById('genDailyBtn');
+  const el=document.getElementById('aiLessons');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
+  el.innerHTML='<div class="spinner">Analysing lesson comments…</div>';
+  const recs=getDateRecs(dateStr).filter(r=>r.comment&&r.comment.trim());
+  const results=await Promise.all(recs.map(r=>generateLessonFeedback(r).then(ai=>({r,ai}))));
+  let h='';
+  results.forEach(({r,ai})=>{
+    h+=`<div class="lesson-card">
+      <div class="lc-head"><span class="lc-title">${r.teacher} · ${r.group||r.className||''}</span><span class="badge purple" style="font-size:11px">${ai.style||''}</span></div>
+      <div class="lc-comment">"${r.comment}"</div>
+      <div class="ai-block"><div class="ai-lbl">Pedagogical analysis</div>${ai.analysis||'—'}</div>`;
+    if(ai.followup)h+=`<div class="ai-followup">🔄 ${ai.followup}</div>`;
+    h+=`</div>`;
+  });
+  el.innerHTML=h||'<p style="font-size:13px;color:#888">No comments found.</p>';
+  btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Regenerate';
+}
+
+async function runDailyAlert(dateStr){
+  const btn=document.getElementById('genAlertBtn');
+  const el=document.getElementById('alertSection');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
+  el.innerHTML='<div class="spinner">Generating head teacher alert…</div>';
+  const alert=await generateDailyAlert(getDateRecs(dateStr));
+  el.innerHTML=`<div class="card">${alertSectionHtml(alert)}</div>`;
+  btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Regenerate';
+}
+
+async function renderWeekly(mon,sun){
+  const el=document.getElementById('weeklyContent');
+  const wr=getWeekRecs(mon,sun);
+  const rate=attendanceRate(wr),abs=absents(wr),lts=lates(wr);
+  const byDay={};wr.forEach(r=>{if(!byDay[r.date])byDay[r.date]=[];byDay[r.date].push(r);});
+  const tw=TEACHERS.map(t=>{const tr=wr.filter(r=>r.teacher===t);return{t,r:attendanceRate(tr),classes:tr.length};}).filter(x=>x.classes>0);
+  const repeats={};wr.forEach(r=>(r.students||[]).filter(s=>s.status==='absent').forEach(s=>{repeats[s.name]=(repeats[s.name]||0)+1;}));
+  const atRisk=Object.entries(repeats).filter(([,v])=>v>=2).map(([k])=>k);
+  const pts=[];
+  if(rate!==null){if(rate<75)pts.push({icon:'ti-alert-triangle',text:`Weekly average below target (${rate}%) — discuss with team.`,type:'red'});else pts.push({icon:'ti-circle-check',text:`Good week: ${rate}% average attendance.`,type:'green'});}
+  if(atRisk.length)pts.push({icon:'ti-user-exclamation',text:`${atRisk.length} student${atRisk.length>1?'s':''} absent 2+ times: ${atRisk.slice(0,4).join(', ')}.`,type:'amber'});
+
+  let h=`<div class="metric-row">
+    <div class="metric"><div class="lbl">Classes</div><div class="val">${wr.length}</div></div>
+    <div class="metric"><div class="lbl">Weekly rate</div><div class="val ${rateColor(rate)}">${rateLabel(rate)}</div></div>
+    <div class="metric"><div class="lbl">Absences</div><div class="val ${abs.length>10?'red':abs.length>4?'amber':'green'}">${abs.length}</div></div>
+    <div class="metric"><div class="lbl">Teachers</div><div class="val">${tw.length}</div></div>
+  </div>`;
+
+  h+=`<div class="slbl">Week summary pointers</div><div class="card"><ul class="ptr-list">${ptrHtml(pts)}</ul></div>`;
+  h+=`<div class="slbl">Teacher performance</div><div class="card">`;
+  tw.forEach(({t,r})=>{h+=`<div class="week-row"><span style="font-weight:600">${t}</span><div class="bar-wrap"><div class="bar-fill" style="width:${r||0}%;background:${r?barColor(r):'#ccc'}"></div></div><span class="badge ${rateColor(r)}">${rateLabel(r)}</span></div>`;});
+  h+=`</div>`;
+  h+=`<div class="slbl">Day-by-day</div><div class="card">`;
+  Object.keys(byDay).sort().forEach(day=>{const dr=attendanceRate(byDay[day]);const dn=new Date(day+'T12:00:00');h+=`<div class="week-row"><span style="color:#888">${DAYS[dn.getDay()].slice(0,3)} ${fmtShort(dn)}</span><div class="bar-wrap"><div class="bar-fill" style="width:${dr||0}%;background:${dr?barColor(dr):'#ccc'}"></div></div><span class="badge ${rateColor(dr)}">${rateLabel(dr)}</span></div>`;});
+  if(!Object.keys(byDay).length)h+=`<p style="font-size:13px;color:#888">No records this week yet.</p>`;
+  h+=`</div>`;
+
+  h+=`<div class="slbl" style="display:flex;align-items:center;justify-content:space-between">
+    <span>Weekly AI analysis &amp; head teacher alert</span>
+    <button class="gen-btn" id="genWeeklyBtn" onclick="runWeeklyAlert()"><i class="ti ti-sparkles"></i> Generate</button>
+  </div><div id="weeklyAlertSection"></div>`;
+
+  const cl=['Review weekly attendance rates per teacher','Follow up on any teacher with <75% attendance this week','Ensure all lesson comments for the week are reviewed','Contact families of at-risk students','Confirm next week\'s schedule has no conflicts','Check any pending exam enrolment deadlines'];
+  h+=`<div class="slbl">Weekly action checklist</div><div class="card"><ul class="checklist">${clHtml(cl,'wcl')}</ul></div>`;
+  el.innerHTML=h;
+  window._weekRecs=wr;
+}
+
+async function runWeeklyAlert(){
+  const btn=document.getElementById('genWeeklyBtn');
+  const el=document.getElementById('weeklyAlertSection');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
+  el.innerHTML='<div class="spinner">Generating weekly analysis…</div>';
+  const alert=await generateWeeklyAlert(window._weekRecs||[]);
+  el.innerHTML=`<div class="card">${alertSectionHtml(alert)}</div>`;
+  btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Regenerate';
+}
+
+function renderTeacherGrid(){
+  const{mon,sun}=getWeekRange(new Date(reportDate+'T12:00:00'));
+  const wr=getWeekRecs(mon,sun);
+  let h='';
+  TEACHERS.forEach(t=>{const tr=wr.filter(r=>r.teacher===t);const r=attendanceRate(tr);h+=`<div class="t-card${selectedTeacher===t?' sel':''}" onclick="selectTeacher('${t}')"><div class="t-name">${t}</div><div class="t-meta">${tr.length} class${tr.length!==1?'es':''} · <span class="${rateColor(r)}" style="font-weight:600">${rateLabel(r)}</span></div></div>`;});
+  document.getElementById('teacherGrid').innerHTML=h;
+}
+
+async function selectTeacher(name){
+  selectedTeacher=name;renderTeacherGrid();
+  const{mon,sun}=getWeekRange(new Date(reportDate+'T12:00:00'));
+  const wr=getWeekRecs(mon,sun).filter(r=>r.teacher===name);
+  const dr=getDateRecs(reportDate).filter(r=>r.teacher===name);
+  const rate=attendanceRate(wr),dayRate=attendanceRate(dr);
+  const abs=absents(wr),lts=lates(wr);
+  const byDay={};wr.forEach(r=>{if(!byDay[r.date])byDay[r.date]=[];byDay[r.date].push(r);});
+
+  let pts=[];
+  if(!dr.length)pts.push({icon:'ti-calendar-off',text:'No classes registered today.',type:'blue'});
+  else{
+    if(dayRate!==null&&dayRate<75)pts.push({icon:'ti-alert-triangle',text:`Today's attendance was ${dayRate}% — worth reviewing.`,type:'amber'});
+    const a=absents(dr);if(a.length)pts.push({icon:'ti-user-off',text:`${a.length} student${a.length>1?'s':''} absent today: ${a.map(x=>x.name).join(', ')}.`,type:'amber'});
+    const nc=dr.filter(r=>!r.comment||!r.comment.trim());if(nc.length)pts.push({icon:'ti-message-off',text:`Please add a lesson comment for ${nc.length} class${nc.length>1?'es':''}.`,type:'red'});
+    if(!pts.length)pts.push({icon:'ti-thumb-up',text:'All good today.',type:'green'});
+  }
+
+  let h=`<div class="card" style="margin-top:1rem">
+    <div class="card-head">
+      <h3>${name} — ${fmtShort(mon)}–${fmtShort(sun)}</h3>
+      <div style="display:flex;gap:6px">
+        <button class="gen-btn" id="genTBtn" onclick="runTeacherAI('${name}','${reportDate}')"><i class="ti ti-sparkles"></i> AI analysis</button>
+        <button class="share-btn" onclick="copyTeacherReport('${name}')"><i class="ti ti-copy"></i> Copy shareable</button>
+      </div>
+    </div>
+    <div class="metric-row">
+      <div class="metric"><div class="lbl">Classes</div><div class="val">${wr.length}</div></div>
+      <div class="metric"><div class="lbl">Weekly rate</div><div class="val ${rateColor(rate)}">${rateLabel(rate)}</div></div>
+      <div class="metric"><div class="lbl">Absences</div><div class="val ${abs.length>3?'red':abs.length>0?'amber':'green'}">${abs.length}</div></div>
+      <div class="metric"><div class="lbl">Late</div><div class="val ${lts.length>0?'amber':'green'}">${lts.length}</div></div>
+    </div>
+    <div class="slbl">Notes for today</div>
+    <ul class="ptr-list">${ptrHtml(pts)}</ul>
+    <hr class="div">
+    <div class="slbl">Day-by-day this week</div>`;
+
+  Object.keys(byDay).sort().forEach(day=>{
+    const dr2=attendanceRate(byDay[day]);const dn=new Date(day+'T12:00:00');const da=absents(byDay[day]);
+    h+=`<div class="week-row"><span style="color:#888">${DAYS[dn.getDay()].slice(0,3)} ${fmtShort(dn)}</span><div class="bar-wrap"><div class="bar-fill" style="width:${dr2||0}%;background:${dr2?barColor(dr2):'#ccc'}"></div></div><span class="badge ${rateColor(dr2)}">${rateLabel(dr2)}</span></div>`;
+    if(da.length)h+=`<p style="font-size:12px;color:#888;padding:2px 0 6px">Absent: ${da.map(a=>a.name).join(', ')}</p>`;
+  });
+  if(!Object.keys(byDay).length)h+=`<p style="font-size:13px;color:#888">No classes this week.</p>`;
+
+  h+=`<div id="teacherAIBlock"></div>
+    <hr class="div">
+    <div class="slbl">Your checklist</div>
+    <ul class="checklist">
+      <li onclick="toggleCheck(this)"><input type="checkbox"><span>Submit lesson comments for all today's classes</span></li>
+      <li onclick="toggleCheck(this)"><input type="checkbox"><span>Note any absence reasons from families</span></li>
+      <li onclick="toggleCheck(this)"><input type="checkbox"><span>Log your teaching hours for today</span></li>
+      <li onclick="toggleCheck(this)"><input type="checkbox"><span>Check for admin messages or feedback on your lessons</span></li>
+    </ul>
+  </div>`;
+  document.getElementById('teacherDetail').innerHTML=h;
+  document.getElementById('teacherDetail').className='t-detail visible';
+}
+
+async function runTeacherAI(name,dateStr){
+  const btn=document.getElementById('genTBtn');
+  const el=document.getElementById('teacherAIBlock');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
+  el.innerHTML='<div class="spinner" style="padding:1rem">Analysing…</div>';
+  const{mon,sun}=getWeekRange(new Date(dateStr+'T12:00:00'));
+  const recs=getWeekRecs(mon,sun).filter(r=>r.teacher===name&&r.comment&&r.comment.trim());
+  if(!recs.length){el.innerHTML='';btn.disabled=false;btn.innerHTML='<i class="ti ti-sparkles"></i> AI analysis';return;}
+  const results=await Promise.all(recs.map(r=>generateLessonFeedback(r).then(ai=>({r,ai}))));
+  let h=`<hr class="div"><div class="slbl"><span class="note-tag">Admin only</span> AI lesson analysis</div>`;
+  results.forEach(({r,ai})=>{
+    h+=`<div class="lesson-card">
+      <div class="lc-head"><span class="lc-title">${r.group||r.className||''} · ${r.date}</span><span class="badge purple" style="font-size:11px">${ai.style||''}</span></div>
+      <div class="lc-comment">"${r.comment}"</div>
+      <div class="ai-block"><div class="ai-lbl">Pedagogical analysis</div>${ai.analysis||'—'}</div>`;
+    if(ai.followup)h+=`<div class="ai-followup">🔄 ${ai.followup}</div>`;
+    h+=`</div>`;
+  });
+  el.innerHTML=h;
+  btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Regenerate';
+}
+
+function copyTeacherReport(name){
+  const{mon,sun}=getWeekRange(new Date(reportDate+'T12:00:00'));
+  const wr=getWeekRecs(mon,sun).filter(r=>r.teacher===name);
+  const rate=attendanceRate(wr),abs=absents(wr);
+  const text=`English with John — Weekly report for ${name}\nWeek: ${fmtShort(mon)}–${fmtShort(sun)}\n\nClasses: ${wr.length} | Attendance: ${rateLabel(rate)} | Absences: ${abs.length}\n${abs.length?'\nAbsent students this week:\n'+abs.map(a=>`- ${a.name} (${a.cls})`).join('\n')+'\n':''}\nYour checklist:\n• Submit lesson comments for all classes\n• Note any absence reasons from families\n• Log your teaching hours\n• Check admin messages and feedback`;
+  navigator.clipboard.writeText(text).catch(()=>{});
+  alert('Shareable report copied to clipboard.\n(No AI analysis or head teacher alerts included — safe to send directly to the teacher.)');
+}
+
+function switchTab(tab){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['daily','weekly','teacher'][i]===tab));
+  document.querySelectorAll('.section').forEach(s=>s.classList.toggle('visible',s.id===tab));
+  if(tab==='teacher')renderTeacherGrid();
+}
+
+async function refreshAll(){
+  ['dailyContent','weeklyContent'].forEach(id=>document.getElementById(id).innerHTML='<div class="spinner"><i class="ti ti-loader"></i> Refreshing…</div>');
+  aiCache={};await loadAll();buildReports();
+}
+
+function buildReports(){
+  const picker=document.getElementById('datePicker');
+  const y=new Date();y.setDate(y.getDate()-1);
+  reportDate=picker.value||fmt(y);picker.value=reportDate;
+  const d=new Date(reportDate+'T12:00:00');
+  document.getElementById('dateLabel').textContent='Reporting for '+fmtDisp(d);
+  const{mon,sun}=getWeekRange(d);
+  renderDaily(reportDate);renderWeekly(mon,sun);
+  if(selectedTeacher)selectTeacher(selectedTeacher);else renderTeacherGrid();
+}
+
+document.getElementById('datePicker').addEventListener('change',buildReports);
+loadAll().then(buildReports);
+</script>
+</body>
+</html>
