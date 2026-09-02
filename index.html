@@ -532,8 +532,18 @@ function clearFlag(n){
   else{reg.status[n]='present';delete reg.notes[n];}
   renderRegister();
 }
+// Tidy a typed student name: collapse spaces, and Title Case it only when the
+// whole thing was typed in one case (so "Gal·la Solé" typed properly is left alone)
+function tidyName(raw){
+  const n=(raw||'').trim().replace(/\s+/g,' ');
+  if(!n)return'';
+  if(n===n.toLowerCase()||n===n.toUpperCase()){
+    return n.toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu,(m,a,b)=>a+b.toUpperCase());
+  }
+  return n;
+}
 function addStudent(){
-  const name=reg.newName.trim();
+  const name=tidyName(reg.newName);
   const allStu=getAllStu();
   if(!name||allStu.some(x=>x.toLowerCase()===name.toLowerCase()))return;
   reg.added.push(name);reg.status[name]='present';reg.flags[name]='new';reg.newName='';
@@ -1438,7 +1448,7 @@ function renderDashboard(){
 }
 
 // ── Manage tab ────────────────────────────────────────────────────────────
-const manState={fT:'',fD:'',expanded:null,pending:{},savedMsg:'',creating:false,newGroup:null};
+const manState={fT:'',fD:'',expanded:null,pending:{},savedMsg:'',creating:false,newGroup:null,addName:{}};
 
 function renderManage(){
   const wrap=document.getElementById('tab-manage');wrap.innerHTML='';
@@ -1574,6 +1584,32 @@ function renderManage(){
         if(mt){const arr=document.createElement('span');arr.style.cssText='font-size:10px;background:#fef9c3;color:#854d0e;padding:2px 6px;border-radius:20px;font-weight:700;flex-shrink:0;';arr.textContent='→';row.appendChild(arr);}
         body.appendChild(row);
       });
+      // ── Add a student to this group (saves to the class list permanently) ──
+      const addWrap=document.createElement('div');
+      addWrap.style.cssText='display:flex;gap:8px;align-items:center;padding-top:10px;margin-top:6px;border-top:1px solid #f1f5f9;';
+      const addIn=document.createElement('input');
+      addIn.type='text';addIn.placeholder='Add student to this class…';
+      addIn.style.cssText='flex:1;padding:6px 9px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:13px;font-family:inherit;min-width:0;';
+      addIn.value=manState.addName[key]||'';
+      addIn.oninput=e=>{manState.addName[key]=e.target.value;};
+      const doAdd=async()=>{
+        const name=tidyName(manState.addName[key]);
+        if(!name)return;
+        const cur=s.students||[];
+        if(cur.some(x=>x.toLowerCase()===name.toLowerCase())){alert(name+' is already in this class.');return;}
+        const ns=state.schedule.map(x=>slotKey(x)===key?{...x,students:[...(x.students||[]),name]}:x);
+        delete manState.addName[key];
+        await saveSchedule(ns);
+        renderManage();renderRegister();
+      };
+      addIn.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();doAdd();}};
+      addWrap.appendChild(addIn);
+      const addBtn=document.createElement('button');
+      addBtn.style.cssText='border:none;background:#15803d;color:#fff;border-radius:7px;padding:6px 14px;font-size:12px;font-family:inherit;font-weight:700;cursor:pointer;flex-shrink:0;';
+      addBtn.textContent='+ Add';addBtn.onclick=doAdd;
+      addWrap.appendChild(addBtn);
+      body.appendChild(addWrap);
+
       // Delete group button (always shown when expanded, admin only)
       if(!state.activeTeacher){
         const delGroupBtn=document.createElement('button');
