@@ -1448,7 +1448,8 @@ function renderDashboard(){
 }
 
 // ── Manage tab ────────────────────────────────────────────────────────────
-const manState={fT:'',fD:'',expanded:null,pending:{},savedMsg:'',creating:false,newGroup:null,addName:{}};
+const manState={fT:'',fD:'',expanded:null,pending:{},savedMsg:'',creating:false,newGroup:null,addName:{},stuQ:'',stuFocus:false};
+function escHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 function renderManage(){
   const wrap=document.getElementById('tab-manage');wrap.innerHTML='';
@@ -1534,6 +1535,67 @@ function renderManage(){
   const fDSel=document.createElement('select');fDSel.innerHTML='<option value="">All</option>'+DAYS.map(d=>'<option'+(d===manState.fD?' selected':'')+'>'+d+'</option>').join('');fDSel.onchange=e=>{manState.fD=e.target.value;renderManage();};fD.appendChild(fDSel);fGrid.appendChild(fD);
   wrap.appendChild(fGrid);
 
+  // ── Find a student ────────────────────────────────────────────────────
+  const wantFocus=manState.stuFocus;manState.stuFocus=false;
+  const sBox=document.createElement('div');sBox.style.cssText='margin-bottom:13px;';
+  sBox.innerHTML='<div class="lbl">Find a student</div>';
+  const sRow=document.createElement('div');sRow.style.cssText='display:flex;gap:7px;align-items:center;';
+  const sIn=document.createElement('input');sIn.type='text';sIn.placeholder='Type a name to see all their classes…';
+  sIn.style.cssText='flex:1;padding:8px 11px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;min-width:0;';
+  sIn.value=manState.stuQ;
+  sIn.oninput=e=>{manState.stuQ=e.target.value;manState.stuFocus=true;clearTimeout(manState._stuT);manState._stuT=setTimeout(renderManage,250);};
+  sRow.appendChild(sIn);
+  if(manState.stuQ){
+    const clr=document.createElement('button');
+    clr.style.cssText='border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;padding:7px 12px;font-size:12px;font-family:inherit;cursor:pointer;color:#64748b;flex-shrink:0;';
+    clr.textContent='✕ Clear';clr.onclick=()=>{manState.stuQ='';renderManage();};sRow.appendChild(clr);
+  }
+  sBox.appendChild(sRow);wrap.appendChild(sBox);
+  if(wantFocus)setTimeout(()=>{try{sIn.focus();sIn.setSelectionRange(sIn.value.length,sIn.value.length);}catch(e){}},0);
+
+  const q=manState.stuQ.trim().toLowerCase();
+  const searching=q.length>=2;
+  let matchNames=[];
+  if(searching){
+    matchNames=[...new Set(state.schedule.flatMap(s=>s.students||[]).filter(n=>n.toLowerCase().includes(q)))].sort();
+    const res=document.createElement('div');res.style.cssText='margin-bottom:14px;';
+    if(!matchNames.length){
+      res.innerHTML='<div style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:10px;padding:11px 14px;font-size:13px;color:#9a3412;">No student in the timetable matching &ldquo;'+escHtml(manState.stuQ.trim())+'&rdquo;.</div>';
+    }else{
+      matchNames.slice(0,10).forEach(name=>{
+        const cls=state.schedule.filter(s=>(s.students||[]).includes(name))
+          .sort((a,b)=>DAY_ORDER[a.day]-DAY_ORDER[b.day]||a.time.localeCompare(b.time));
+        const mine=state.records.map(r=>(r.students||[]).find(st=>st.name===name)).filter(Boolean);
+        const counted=mine.filter(st=>st.flag!=='dropped');
+        const abs=counted.filter(st=>st.status==='absent').length;
+        const late=counted.filter(st=>st.status==='late').length;
+        const card=document.createElement('div');
+        card.style.cssText='background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:11px;padding:12px 14px;margin-bottom:9px;';
+        let h='<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:7px;">'
+          +'<span style="font-weight:700;font-size:15px;color:#3730a3;">'+escHtml(name)+'</span>'
+          +'<span style="font-size:12px;color:#4f46e5;font-weight:600;">'+cls.length+' class'+(cls.length===1?'':'es')+' a week</span>';
+        if(counted.length){
+          h+='<span style="font-size:12px;color:#64748b;">'+Math.round((counted.length-abs)/counted.length*100)+'% attendance · '
+            +abs+' absence'+(abs===1?'':'s')+(late?' · '+late+' late':'')+' in '+counted.length+' logged</span>';
+        }else{
+          h+='<span style="font-size:12px;color:#94a3b8;">no registers logged yet</span>';
+        }
+        h+='</div>';
+        h+=cls.map(s=>'<div style="display:flex;gap:9px;align-items:center;font-size:12.5px;padding:4px 0;border-top:1px solid #ddd6fe;">'
+          +'<span style="font-weight:600;min-width:120px;">'+s.day+' '+s.time+'</span>'
+          +'<span style="flex:1;">'+escHtml(s.course)+'</span>'
+          +'<span style="color:#64748b;">'+escHtml(s.teacher)+'</span></div>').join('');
+        card.innerHTML=h;res.appendChild(card);
+      });
+      if(matchNames.length>10){
+        const more=document.createElement('div');more.style.cssText='font-size:12px;color:#94a3b8;margin-bottom:8px;';
+        more.textContent='…and '+(matchNames.length-10)+' more students match — type more letters to narrow it down.';
+        res.appendChild(more);
+      }
+    }
+    wrap.appendChild(res);
+  }
+
   const pendCount=Object.values(manState.pending).reduce((a,p)=>a+(p.newTeacher?1:0)+Object.keys(p.moves||{}).length,0);
   if(pendCount>0){
     const pb=document.createElement('div');pb.style.cssText='background:#fef9c3;border:1.5px solid #fde047;border-radius:10px;padding:9px 13px;margin-bottom:11px;display:flex;align-items:center;gap:9px;';
@@ -1545,7 +1607,8 @@ function renderManage(){
   if(manState.savedMsg){const sm=document.createElement('div');sm.style.cssText='font-size:12px;color:#15803d;font-weight:600;margin-bottom:9px;';sm.textContent=manState.savedMsg;wrap.appendChild(sm);}
 
   const allOpts=state.schedule.map(s=>({label:s.teacher+' · '+s.day+' '+s.time+' · '+s.course,key:slotKey(s)})).sort((a,b)=>a.label.localeCompare(b.label));
-  const filtered=state.schedule.filter(s=>(!manState.fT||s.teacher===manState.fT)&&(!manState.fD||s.day===manState.fD))
+  const filtered=state.schedule.filter(s=>(!manState.fT||s.teacher===manState.fT)&&(!manState.fD||s.day===manState.fD)
+      &&(!searching||(s.students||[]).some(n=>matchNames.includes(n))))
     .sort((a,b)=>DAY_ORDER[a.day]-DAY_ORDER[b.day]||a.time.localeCompare(b.time)||a.teacher.localeCompare(b.teacher));
 
   filtered.forEach(s=>{
