@@ -284,7 +284,8 @@ input[type=date]{border:1px solid #ddd;border-radius:7px;padding:5px 9px;font-si
 <script>
 
 const FB='https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
-const TEACHERS=['Anna','Chaymae','Clara','Ferran','Mary','Mireia','John'];
+const DEFAULT_TEACHERS=['Anna','Chaymae','Clara','John','Lucy','Mary','Mireia','Prosper'];
+let TEACHERS=DEFAULT_TEACHERS.slice(); // replaced by the shared list in Firebase (/teachers) on load
 const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const STYLES=['Learning Analysis & Early Language Development','Student Confidence & Adaptability','Assessment & Exam Coaching','Leadership & Teamwork','Communicative Fluency & Interaction','Grammar & Accuracy Focus','Creative & Productive Skills'];
 
@@ -329,8 +330,10 @@ function lates(recs){return recs.flatMap(r=>(r.students||[]).filter(s=>s.status=
 
 async function fetchFB(path){const r=await fetch(`${FB}/${path}.json`);if(!r.ok)throw new Error(r.status);return r.json();}
 async function loadAll(){
-  try{const[recs,fb]=await Promise.all([fetchFB('records'),fetchFB('feedback')]);
-    allRecords=recs?Object.values(recs):[];allFeedback=fb?Object.values(fb):[];}
+  try{const[recs,fb,tea]=await Promise.all([fetchFB('records'),fetchFB('feedback'),fetchFB('teachers')]);
+    allRecords=recs?Object.values(recs):[];allFeedback=fb?Object.values(fb):[];
+    const tArr=(Array.isArray(tea)?tea:Object.values(tea||{})).filter(t=>typeof t==='string'&&t.trim());
+    if(tArr.length) TEACHERS=tArr;}
   catch(e){allRecords=[];allFeedback=[];}
 }
 
