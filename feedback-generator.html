@@ -67,6 +67,8 @@
   <button class="btn btn-primary" onclick="loadRecords()">Load records from Firebase</button>
 </div>
 
+<div id="log">Ready. Load records to begin.</div>
+
 <div id="statsDiv" style="display:none">
   <div class="stats" id="statsEl"></div>
 
@@ -83,7 +85,6 @@
     <span id="progress" style="font-size:12px;color:#64748b;"></span>
   </div>
 
-  <div id="log">Ready. Load records to begin.</div>
   <div id="list"></div>
 
   <div id="missingSection" style="margin-top:24px;display:none;">
@@ -125,14 +126,22 @@ async function loadRecords() {
     document.getElementById('apiKey').focus();
     return;
   }
-  log('Loading records from Firebase...');
+  log('Loading records from Firebase…');
   try {
-    const [rRes, fRes] = await Promise.all([
-      fetch(FB_URL() + '/records.json'),
-      fetch(FB_URL() + '/feedback.json')
+    const withTimeout = (url) => Promise.race([
+      fetch(url),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timed out after 15s — Firebase did not respond')), 15000))
     ]);
+    const [rRes, fRes] = await Promise.all([
+      withTimeout(FB_URL() + '/records.json'),
+      withTimeout(FB_URL() + '/feedback.json')
+    ]);
+    if (rRes.status === 401 || rRes.status === 403) {
+      throw new Error('Firebase refused the request (HTTP ' + rRes.status + '). The database rules are probably still locked — open Firebase → Realtime Database → Rules and set .read and .write back to true.');
+    }
+    if (!rRes.ok) throw new Error('Firebase returned HTTP ' + rRes.status);
     const rData = await rRes.json();
-    const fData = await fRes.json();
+    const fData = fRes.ok ? await fRes.json() : null;
 
     const allRecs = rData ? (Array.isArray(rData) ? rData : Object.values(rData)).filter(r => r && r.teacher && !r.isPlanning) : [];
     records = allRecs.filter(r => r.comment && r.comment.trim().length > 10);
@@ -155,8 +164,11 @@ async function loadRecords() {
     updateStats();
     renderList();
   } catch(e) {
-    log('Error: ' + e.message);
-    alert('Failed to load. Check Firebase URL.\n' + e.message);
+    const el = document.getElementById('log');
+    el.style.background = '#7f1d1d';
+    el.style.color = '#fecaca';
+    el.textContent = '⚠ Could not load: ' + e.message;
+    console.error('loadRecords failed:', e);
   }
 }
 
