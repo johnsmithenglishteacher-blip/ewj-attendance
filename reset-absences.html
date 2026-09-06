@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EWJ — Start a new course</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;padding:22px 14px 60px}
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:#64748b;font-size:13px;margin-bottom:20px;line-height:1.6}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:14px}
+  .card h2{font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+  .step{background:#0f172a;color:#fff;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+  .done .step{background:#15803d}
+  button{font-family:inherit;font-size:13px;font-weight:600;border-radius:8px;padding:9px 16px;cursor:pointer;border:1.5px solid #e2e8f0;background:#fff;color:#0f172a}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.primary{background:#0f172a;color:#fff;border-color:#0f172a}
+  button.danger{background:#b91c1c;color:#fff;border-color:#b91c1c}
+  button.ghost{color:#64748b;border-color:#e2e8f0}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .stat{display:flex;gap:22px;flex-wrap:wrap;margin:8px 0 4px}
+  .stat div{font-size:12px;color:#64748b}
+  .stat b{display:block;font-size:19px;color:#0f172a;font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #f1f5f9}
+  th{color:#64748b;font-weight:600}
+  .msg{font-size:13px;padding:10px 12px;border-radius:8px;margin-top:10px;display:none;line-height:1.5}
+  .ok{background:#dcfce7;color:#15803d}
+  .err{background:#fee2e2;color:#b91c1c}
+  .warn{background:#fef9c3;color:#854d0e;font-size:12.5px;padding:11px 13px;border-radius:8px;margin-top:10px;line-height:1.55}
+  .muted{color:#94a3b8;font-size:12px}
+  label.chk{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:5px 0;cursor:pointer}
+  label.chk input{margin-top:3px;flex-shrink:0}
+  label.chk span small{display:block;color:#94a3b8;font-size:11.5px}
+  input[type=text]{padding:8px 11px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;width:150px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Start a new course</h1>
+  <div class="sub">Archives every attendance record, then clears them so 2026–27 begins with no absences against any student.<br>
+  The timetable, the teacher list and the clock-in hours are <b>not</b> touched.</div>
+
+  <div class="card" id="c1">
+    <h2><span class="step">1</span> What's stored right now</h2>
+    <div id="cur" class="muted">Reading from Firebase…</div>
+    <div class="stat" id="stats" style="display:none">
+      <div>Registers<b id="nrec">–</b></div>
+      <div>Student entries<b id="nstu">–</b></div>
+      <div>Absences logged<b id="nabs">–</b></div>
+      <div>Lesson feedback<b id="nfb">–</b></div>
+    </div>
+    <table id="bydate" style="display:none"><thead><tr><th>Period</th><th>Registers</th><th>Absences</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card" id="c2">
+    <h2><span class="step">2</span> Download the archive</h2>
+    <div class="muted">Take both. The .json is what restores everything if you ever need it back; the .csv is the readable copy for your records.</div>
+    <div class="row" style="margin-top:12px">
+      <button id="dlj" class="primary" disabled>⬇ Archive (.json)</button>
+      <button id="dlc" disabled>⬇ Spreadsheet (.csv)</button>
+      <span class="muted" id="dlnote">Both needed before clearing.</span>
+    </div>
+  </div>
+
+  <div class="card" id="c3">
+    <h2><span class="step">3</span> Clear</h2>
+    <div style="margin-bottom:6px">
+      <label class="chk"><input type="checkbox" id="cbRec" checked><span>Attendance registers<small>Every register ever saved, with its absences, lates and comments</small></span></label>
+      <label class="chk"><input type="checkbox" id="cbFb" checked><span>Lesson feedback<small>The AI feedback written against those registers — meaningless once the registers are gone</small></span></label>
+    </div>
+    <div class="warn"><b>This cannot be undone from inside the app.</b> Your archive file is the only way back, so keep it somewhere safe — not just in Downloads.</div>
+    <div class="row" style="margin-top:12px">
+      <span class="muted">Type <b>CLEAR</b> to confirm:</span>
+      <input type="text" id="conf" placeholder="CLEAR" autocomplete="off">
+      <button id="go" class="danger" disabled>Clear and start the new course</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">↩</span> Put it back</h2>
+    <div class="muted">If you clear by mistake, choose the archive .json here and everything returns exactly as it was.</div>
+    <div class="row" style="margin-top:12px">
+      <input type="file" id="restoreFile" accept=".json" style="font-size:12px">
+      <button id="restore" class="ghost">Restore from archive</button>
+    </div>
+    <div class="msg" id="rmsg"></div>
+  </div>
+
+  <div class="muted" style="text-align:center;margin-top:18px">English with John · attendance system</div>
+</div>
+
+<script>
+const FB='https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
+const COURSE_START=new Date(2026,7,1,12,0,0); // 1 Aug 2026 — anything before is a previous course
+
+let records=[],feedback={},archived={json:false,csv:false};
+
+const $=id=>document.getElementById(id);
+function show(el,cls,txt){el.className='msg '+cls;el.innerHTML=txt;el.style.display='block';}
+function parseRecDate(s){
+  if(!s)return null;
+  const p=String(s).split('/');
+  if(p.length!==3){const d=new Date(s);return isNaN(d.getTime())?null:d;}
+  const day=+p[0],mon=+p[1],yr=+p[2];
+  if(!day||!mon||!yr)return null;
+  return new Date(yr,mon-1,day,12,0,0);
+}
+const entries=r=>(r.students||[]).length;
+const absences=r=>(r.students||[]).filter(s=>s.status==='absent'&&s.flag!=='dropped').length;
+
+async function load(){
+  try{
+    const [rRes,fRes]=await Promise.all([fetch(FB+'/records.json'),fetch(FB+'/feedback.json')]);
+    if(!rRes.ok)throw new Error('Firebase returned HTTP '+rRes.status);
+    const rData=await rRes.json();
+    feedback=fRes.ok?(await fRes.json()||{}):{};
+    records=rData?(Array.isArray(rData)?rData:Object.values(rData)).filter(r=>r&&r.id):[];
+
+    const nStu=records.reduce((n,r)=>n+entries(r),0);
+    const nAbs=records.reduce((n,r)=>n+absences(r),0);
+    $('nrec').textContent=records.length;
+    $('nstu').textContent=nStu;
+    $('nabs').textContent=nAbs;
+    $('nfb').textContent=Object.keys(feedback).length;
+    $('cur').style.display='none';
+    $('stats').style.display='flex';
+
+    const prev=records.filter(r=>{const d=parseRecDate(r.date);return d&&d<COURSE_START;});
+    const cur=records.filter(r=>{const d=parseRecDate(r.date);return d&&d>=COURSE_START;});
+    const undated=records.filter(r=>!parseRecDate(r.date));
+    const rows=[['Before 1 Aug 2026 (previous courses)',prev],['1 Aug 2026 onwards (this course)',cur]];
+    if(undated.length)rows.push(['No readable date',undated]);
+    $('bydate').querySelector('tbody').innerHTML=rows.map(([label,set])=>
+      '<tr><td>'+label+'</td><td>'+set.length+'</td><td>'+set.reduce((n,r)=>n+absences(r),0)+'</td></tr>').join('');
+    $('bydate').style.display='table';
+
+    if(!records.length){
+      $('cur').style.display='block';
+      $('cur').innerHTML='<b>No registers stored.</b> Nothing to archive or clear — you are already starting clean.';
+      return;
+    }
+    $('dlj').disabled=false;$('dlc').disabled=false;
+  }catch(e){
+    $('cur').innerHTML='<span style="color:#b91c1c">Could not read from Firebase: '+e.message+'</span>';
+  }
+}
+
+function save(name,text,type){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([text],{type}));
+  a.download=name;a.click();
+}
+function stamp(){return new Date().toISOString().slice(0,10);}
+
+$('dlj').onclick=()=>{
+  save('ewj-archive-'+stamp()+'.json',JSON.stringify({exported:new Date().toISOString(),records,feedback},null,1),'application/json');
+  archived.json=true;checkReady();
+};
+$('dlc').onclick=()=>{
+  const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const head=['Date','Week','Day','Time','Teacher','Course','Student','Status','Flag','Note','Lesson comment'];
+  const lines=[head.join(',')];
+  records.slice().sort((a,b)=>{
+    const da=parseRecDate(a.date),db=parseRecDate(b.date);
+    return (da?da.getTime():0)-(db?db.getTime():0);
+  }).forEach(r=>{
+    (r.students||[]).forEach(s=>{
+      lines.push([r.date,r.week,r.day,r.time,r.teacher,r.course,s.name,s.status,s.flag,s.note,r.comment].map(esc).join(','));
+    });
+  });
+  save('ewj-attendance-'+stamp()+'.csv','﻿'+lines.join('\n'),'text/csv;charset=utf-8');
+  archived.csv=true;checkReady();
+};
+
+function checkReady(){
+  if(archived.json&&archived.csv){
+    $('c2').classList.add('done');
+    $('dlnote').textContent='Archive saved ✓';
+  }else if(archived.json||archived.csv){
+    $('dlnote').textContent='Now take the '+(archived.json?'.csv':'.json')+' too.';
+  }
+  gate();
+}
+function gate(){
+  const typed=$('conf').value.trim().toUpperCase()==='CLEAR';
+  const picked=$('cbRec').checked||$('cbFb').checked;
+  $('go').disabled=!(archived.json&&archived.csv&&typed&&picked&&records.length);
+}
+$('conf').oninput=gate;$('cbRec').onchange=gate;$('cbFb').onchange=gate;
+
+$('go').onclick=async()=>{
+  const doRec=$('cbRec').checked,doFb=$('cbFb').checked;
+  const what=[doRec?records.length+' registers':null,doFb?Object.keys(feedback).length+' feedback entries':null].filter(Boolean).join(' and ');
+  if(!confirm('Delete '+what+'?\n\nThe timetable, teachers and hours are untouched.\nYour archive file is the only way back.'))return;
+  $('go').disabled=true;
+  show($('msg'),'ok','Clearing…');
+  try{
+    if(doRec){
+      const r=await fetch(FB+'/records.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:'null'});
+      if(!r.ok)throw new Error('records: HTTP '+r.status);
+    }
+    if(doFb){
+      const r=await fetch(FB+'/feedback.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:'null'});
+      if(!r.ok)throw new Error('feedback: HTTP '+r.status);
+    }
+    const back=await (await fetch(FB+'/records.json')).json();
+    const left=back?(Array.isArray(back)?back:Object.values(back)).filter(x=>x&&x.id).length:0;
+    if(doRec&&left)throw new Error('cleared, but '+left+' registers are still there — try again');
+    show($('msg'),'ok','✓ Done. The new course starts with a clean sheet.<br><br>'
+      +'On every device, teachers should <b>close the attendance page and reopen it</b> — an open tab keeps its own copy of the old records until it reloads.');
+    $('c3').classList.add('done');
+    records=[];feedback={};
+    $('nrec').textContent='0';$('nstu').textContent='0';$('nabs').textContent='0';$('nfb').textContent='0';
+  }catch(e){
+    show($('msg'),'err','Failed: '+e.message+'. Nothing may have been deleted, or only part of it — reload this page to see the current state before trying again.');
+    $('go').disabled=false;
+  }
+};
+
+$('restore').onclick=async()=>{
+  const f=$('restoreFile').files[0];
+  if(!f){show($('rmsg'),'err','Choose your archive .json file first.');return;}
+  try{
+    const data=JSON.parse(await f.text());
+    const recs=data.records||[];
+    if(!Array.isArray(recs)||!recs.length)throw new Error('that file has no records in it');
+    if(!confirm('Restore '+recs.length+' registers from this archive?\n\nAnything saved since the clear will be replaced.'))return;
+    const obj={};recs.forEach(r=>{if(r&&r.id)obj['r'+r.id]=r;});
+    let res=await fetch(FB+'/records.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
+    if(!res.ok)throw new Error('records: HTTP '+res.status);
+    if(data.feedback&&Object.keys(data.feedback).length){
+      res=await fetch(FB+'/feedback.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data.feedback)});
+      if(!res.ok)throw new Error('feedback: HTTP '+res.status);
+    }
+    show($('rmsg'),'ok','↩ Restored '+recs.length+' registers. Reload the attendance page to see them.');
+  }catch(e){
+    show($('rmsg'),'err','Restore failed: '+e.message);
+  }
+};
+
+load();
+</script>
+</body>
+</html>
