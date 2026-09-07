@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Add rooms to the timetable</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;padding:24px;max-width:820px;margin:0 auto;line-height:1.5}
+h1{font-size:21px;font-weight:800;margin-bottom:4px}
+.sub{font-size:13px;color:#64748b;margin-bottom:20px}
+.card{background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:16px 18px;margin-bottom:14px}
+.card h2{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:10px}
+button{font:inherit;font-weight:700;border:none;border-radius:9px;padding:11px 18px;cursor:pointer;background:#4f46e5;color:#fff}
+button:disabled{background:#cbd5e1;color:#64748b;cursor:not-allowed}
+button.ghost{background:#fff;color:#4f46e5;border:1.5px solid #c7d2fe}
+button.warn{background:#dc2626}
+.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+#log{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#0f172a;color:#e2e8f0;border-radius:9px;padding:12px;max-height:300px;overflow:auto;white-space:pre-wrap;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+th,td{text-align:left;padding:5px 7px;border-bottom:1px solid #f1f5f9}
+th{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.over{background:#fef2f2}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:20px;background:#eef2ff;color:#3730a3}
+.err{background:#fef2f2;border:1.5px solid #fca5a5;color:#b91c1c;border-radius:9px;padding:11px 13px;margin-bottom:12px;font-size:13px;display:none}
+.ok{background:#f0fdf4;border:1.5px solid #86efac;color:#15803d;border-radius:9px;padding:11px 13px;margin-bottom:12px;font-size:13px;display:none}
+.note{font-size:12.5px;color:#64748b;margin-top:8px}
+</style></head><body>
+
+<h1>Add rooms to the timetable</h1>
+<p class="sub">Adds a <strong>room</strong> and its <strong>capacity</strong> to every class already in Firebase. Student lists are not touched. Safe to run during the day — it only adds two fields.</p>
+
+<div class="err" id="err"></div>
+<div class="ok" id="ok"></div>
+
+<div class="card">
+  <h2>Step 1 — Back up what is there now</h2>
+  <div class="row"><button id="b1">Read timetable &amp; download backup</button></div>
+  <div class="note">Downloads <code>schedule-backup-before-rooms.json</code>. Step 2 stays locked until you do.</div>
+</div>
+
+<div class="card">
+  <h2>Step 2 — Check the preview</h2>
+  <div id="prev">Run step 1 first.</div>
+</div>
+
+<div class="card">
+  <h2>Step 3 — Apply</h2>
+  <div class="row">
+    <button id="b3" disabled>Add rooms to Firebase</button>
+    <button id="b4" class="ghost" disabled>Undo (restore backup)</button>
+  </div>
+</div>
+
+<div id="log"></div>
+
+<script>
+const FB='https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
+const ROOMS={"Monday|16:15":{"John":"1","Mary":"2","Clara":"3","Chaymae":"4","Anna":"5","Lucy":"Artesa"},"Monday|17:15":{"John":"1","Mary":"2","Clara":"3","Chaymae":"4","Anna":"5","Lucy":"Artesa"},"Monday|18:15":{"John":"1","Mary":"2","Chaymae":"3","Clara":"4","Anna":"5","Lucy":"Artesa"},"Monday|19:15":{"John":"1","Mary":"2","Chaymae":"3","Clara":"4","Anna":"5","Lucy":"Artesa"},"Monday|20:15":{"John":"1","Lucy":"Artesa"},"Tuesday|16:15":{"Mary":"1","Anna":"2","Lucy":"3","Chaymae":"4","Clara":"6","John":"Artesa"},"Tuesday|17:15":{"Mary":"1","Anna":"2","Lucy":"3","Chaymae":"4","Prosper":"5","Clara":"6","John":"Artesa"},"Tuesday|18:15":{"Mary":"1","Prosper":"2","Anna":"3","Chaymae":"4","Lucy":"5","Clara":"6","John":"Artesa"},"Tuesday|19:15":{"Mary":"1","Prosper":"2","Anna":"3","Chaymae":"4","Lucy":"5","Clara":"6","John":"Artesa"},"Tuesday|20:15":{"John":"Artesa"},"Wednesday|16:15":{"John":"1","Mary":"2","Clara":"3","Chaymae":"4","Prosper":"5","Anna":"6","Lucy":"Artesa"},"Wednesday|17:15":{"John":"1","Mary":"2","Clara":"3","Chaymae":"4","Prosper":"5","Anna":"6","Lucy":"Artesa"},"Wednesday|18:15":{"John":"1","Mary":"2","Clara":"3","Chaymae":"4","Prosper":"5","Anna":"6","Lucy":"Artesa"},"Wednesday|19:15":{"John":"1","Mary":"2","Clara":"3","Chaymae":"4","Prosper":"5","Anna":"6","Lucy":"Artesa"},"Wednesday|20:15":{"John":"1","Lucy":"Artesa"},"Thursday|16:15":{"Mary":"1","Anna":"2","Lucy":"3","Chaymae":"4","Clara":"5","John":"Artesa"},"Thursday|17:15":{"Mary":"1","Prosper":"2","Lucy":"3","Chaymae":"4","Clara":"5","Anna":"6","John":"Artesa"},"Thursday|18:15":{"Mary":"1","Prosper":"2","Lucy":"3","Chaymae":"4","Clara":"5","Anna":"6","John":"Artesa"},"Thursday|19:15":{"Mary":"1","Prosper":"2","Lucy":"3","Chaymae":"4","Clara":"5","Anna":"6","John":"Artesa"},"Thursday|20:15":{"John":"Artesa"},"Friday|15:15":{"John":"1","Mary":"2","Anna":"3","Chaymae":"4","Clara":"5","Lucy":"Artesa"},"Friday|16:15":{"John":"1","Mary":"2","Anna":"3","Chaymae":"4","Clara":"5","Lucy":"Artesa"},"Friday|17:15":{"John":"1","Mary":"2","Anna":"3","Chaymae":"4","Clara":"5","Lucy":"Artesa"},"Friday|18:15":{"John":"1","Mary":"2","Anna":"3","Chaymae":"4","Clara":"5","Lucy":"Artesa"},"Friday|19:15":{"Lucy":"Artesa"}};
+const CAP={'1':10,'2':8,'3':6,'4':5,'5':5,'6':5,'Artesa':12};
+const L=document.getElementById('log'),E=document.getElementById('err'),O=document.getElementById('ok');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight;}
+function err(m){E.textContent=m;E.style.display='block';O.style.display='none';}
+function ok(m){O.textContent=m;O.style.display='block';E.style.display='none';}
+let live=null,patched=null,backup=null;
+
+function dl(name,obj){
+  const b=new Blob([JSON.stringify(obj,null,1)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+
+document.getElementById('b1').onclick=async()=>{
+  E.style.display='none';log('Reading /schedule …');
+  try{
+    const r=await fetch(FB+'/schedule.json');
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    live=await r.json();
+    if(!Array.isArray(live))throw new Error('Timetable is not a list — stopping.');
+    backup=JSON.parse(JSON.stringify(live));
+    log('Read '+live.length+' classes.');
+    dl('schedule-backup-before-rooms.json',backup);
+    log('Backup downloaded.');
+    buildPreview();
+  }catch(e){err('Could not read the timetable: '+e.message+'. Check you are online, then try again.');log('FAILED: '+e.message);}
+};
+
+function buildPreview(){
+  patched=live.map(c=>{
+    const m=ROOMS[c.day+'|'+c.time]||{};
+    const room=m[c.teacher];
+    const o=Object.assign({},c);
+    if(room){o.room=room;o.capacity=CAP[room];}
+    return o;
+  });
+  const unmatched=patched.filter(c=>!c.room);
+  const over=patched.filter(c=>c.room&&(c.students||[]).length>c.capacity)
+                    .sort((a,b)=>((b.students||[]).length-b.capacity)-((a.students||[]).length-a.capacity));
+  let h='<div><span class="pill">'+(patched.length-unmatched.length)+' of '+patched.length+' classes matched to a room</span></div>';
+  if(unmatched.length){
+    h+='<p class="note"><strong>'+unmatched.length+' class(es) could not be matched</strong> — they will keep no room, and nothing else about them changes:</p><table><tr><th>Day</th><th>Time</th><th>Teacher</th><th>Course</th></tr>';
+    unmatched.forEach(c=>{h+='<tr><td>'+c.day+'</td><td>'+c.time+'</td><td>'+c.teacher+'</td><td>'+c.course+'</td></tr>';});
+    h+='</table>';
+  }
+  if(over.length){
+    h+='<p class="note"><strong>'+over.length+' group(s) are bigger than their room</strong>. Nothing is blocked — this is just what the numbers say:</p><table><tr><th>Day</th><th>Time</th><th>Teacher</th><th>Course</th><th>Room</th><th>In group</th><th>Seats</th></tr>';
+    over.forEach(c=>{h+='<tr class="over"><td>'+c.day+'</td><td>'+c.time+'</td><td>'+c.teacher+'</td><td>'+c.course+'</td><td>'+c.room+'</td><td><strong>'+(c.students||[]).length+'</strong></td><td>'+c.capacity+'</td></tr>';});
+    h+='</table>';
+  }
+  document.getElementById('prev').innerHTML=h;
+  document.getElementById('b3').disabled=false;
+  log('Preview built.');
+}
+
+document.getElementById('b3').onclick=async()=>{
+  if(!patched)return;
+  if(!confirm('Add a room and capacity to '+patched.length+' classes in Firebase?\n\nStudent lists, teachers, days, times and courses are left exactly as they are.'))return;
+  try{
+    log('Writing …');
+    const r=await fetch(FB+'/schedule.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(patched)});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const v=await (await fetch(FB+'/schedule.json')).json();
+    const withRoom=v.filter(c=>c.room).length;
+    log('Verified: '+v.length+' classes, '+withRoom+' with a room.');
+    ok('Done — '+withRoom+' of '+v.length+' classes now carry a room. Teachers will see it next time they open the register.');
+    document.getElementById('b4').disabled=false;
+  }catch(e){err('Write failed: '+e.message+'. Nothing was half-written — Firebase replaces the timetable in one go. Try again, or use Undo.');log('FAILED: '+e.message);}
+};
+
+document.getElementById('b4').onclick=async()=>{
+  if(!backup)return;
+  if(!confirm('Put the timetable back exactly as it was before this tool ran?'))return;
+  try{
+    const r=await fetch(FB+'/schedule.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(backup)});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    ok('Restored. The timetable is back to how it was.');log('Restored.');
+  }catch(e){err('Restore failed: '+e.message);}
+};
+</script>
+</body></html>
