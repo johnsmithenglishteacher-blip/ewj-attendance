@@ -104,6 +104,14 @@ hr.div{border:none;border-top:1px solid #f0f0f0;margin:1rem 0}
 
 <script>
 const FB='https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
+// This course only. Week 36 of 2026 starts Monday 31 August; anything submitted
+// before then belongs to last course and is never reported on.
+let COURSE_START=new Date(2026,7,31,0,0,0).getTime();
+function thisCourse(r){
+  if(!r)return false;
+  const t=Date.parse(r.submittedAtFull||'')||Number(r.id)||0;
+  return t===0 || t>=COURSE_START;
+}
 const DEFAULT_TEACHERS=['Anna','Chaymae','Clara','John','Lucy','Mary','Mireia','Prosper'];
 let TEACHERS=DEFAULT_TEACHERS.slice(); // replaced by the shared list in Firebase (/teachers) on load
 const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -124,7 +132,8 @@ function absents(recs){return recs.flatMap(r=>(r.students||[]).filter(s=>s.statu
 function lates(recs){return recs.flatMap(r=>(r.students||[]).filter(s=>s.status==='late').map(s=>({name:s.name,cls:r.className||r.group||'',teacher:r.teacher})));}
 
 async function fetchFB(path){const r=await fetch(`${FB}/${path}.json`);if(!r.ok)throw new Error('Firebase '+r.status);return r.json();}
-async function loadAll(){try{const[recs,fb,tea]=await Promise.all([fetchFB('records'),fetchFB('feedback'),fetchFB('teachers')]);allRecords=recs?Object.values(recs):[];allFeedback=fb?Object.values(fb):[];const tArr=(Array.isArray(tea)?tea:Object.values(tea||{})).filter(t=>typeof t==='string'&&t.trim());if(tArr.length) TEACHERS=tArr;}catch(e){
+async function loadAll(){try{try{const cs=await fetchFB('courseStart');if(typeof cs==='number'&&cs>0)COURSE_START=cs;}catch(e){}
+const[recs,fb,tea]=await Promise.all([fetchFB('records'),fetchFB('feedback'),fetchFB('teachers')]);allRecords=(recs?Object.values(recs):[]).filter(thisCourse);allFeedback=fb?Object.values(fb):[];const tArr=(Array.isArray(tea)?tea:Object.values(tea||{})).filter(t=>typeof t==='string'&&t.trim());if(tArr.length) TEACHERS=tArr;}catch(e){
     allRecords=[];allFeedback=[];
     console.error('Reports load failed:',e);
     const b=document.body;
