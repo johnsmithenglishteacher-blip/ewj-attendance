@@ -469,8 +469,8 @@ function absMap(weeks4=false){
   const tw=weekNum(new Date());
   state.records.forEach(r=>{
     if(weeks4){
-      const rw=parseInt((r.week||'').replace('Week ',''));
-      if(isNaN(rw)||tw-rw>4)return; // only last 4 weeks
+      const rw=weekVal(r.week);      // a number on some records, "Week 36" on others
+      if(rw===null||tw-rw>4)return;  // only last 4 weeks
     }
     (r.students||[]).forEach(s=>{
       if(s.status==='absent'&&s.flag!=='dropped') m[s.name]=(m[s.name]||0)+1;
@@ -503,7 +503,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v9.7</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v9.9</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -547,7 +547,7 @@ function renderTeacherChips(){
 function renderTabBar(){
   const bar=document.getElementById('tab-bar');
   bar.innerHTML='';
-  const pending=state.records.filter(r=>!r.commentDone&&(!state.activeTeacher||r.teacher===state.activeTeacher)).length;
+  const pending=state.records.filter(r=>needsComment(r)&&(!state.activeTeacher||r.teacher===state.activeTeacher)).length;
   const unreadFeedback=state.activeTeacher?state.records.filter(r=>r.teacher===state.activeTeacher&&r.adminFeedback&&!r.adminFeedbackRead).length:0;
   const histLabel='History'+(pending>0?' ('+pending+')':(unreadFeedback>0?' 📬'+unreadFeedback:''));
   const unreadMsg=state.activeTeacher?
@@ -961,6 +961,12 @@ const logState={search:'',editing:null,draft:'',expanded:null,editingStudents:nu
 
 // Week has been stored both as 36 and as "Week 36" over the life of this app.
 // Compare on the number so the week filter matches either.
+// John runs the school. He teaches, so his attendance figures count like anyone's,
+// but he is never counted as owing a lesson comment and never gets chased for one.
+const NO_COMMENT_CHASE=['John'];
+function needsComment(r){
+  return r && !r.commentDone && !NO_COMMENT_CHASE.includes(r.teacher);
+}
 function weekVal(w){
   if(w==null)return null;
   const m=String(w).match(/\d+/);
@@ -977,7 +983,7 @@ function renderLog(){
   if(logState.filterTeacher) recs=recs.filter(r=>r.teacher===logState.filterTeacher);
   if(logState.filterDay)     recs=recs.filter(r=>r.day===logState.filterDay);
   if(logState.filterWeek)    recs=recs.filter(r=>weekVal(r.week)===weekVal(logState.filterWeek));
-  if(logState.filterNoComment) recs=recs.filter(r=>!r.commentDone);
+  if(logState.filterNoComment) recs=recs.filter(r=>needsComment(r));
   if(logState.search.trim()){
     const q=logState.search.toLowerCase();
     recs=recs.filter(r=>(r.teacher||'').toLowerCase().includes(q)
@@ -991,7 +997,7 @@ function renderLog(){
     w.textContent=skipped+' damaged record'+(skipped>1?'s':'')+' hidden — they are missing a teacher name. Everything else is shown below.';
     wrap.appendChild(w);
   }
-  const pending=state.records.filter(r=>!r.commentDone&&(!at||r.teacher===at)).length;
+  const pending=state.records.filter(r=>needsComment(r)&&(!at||r.teacher===at)).length;
 
   // Search + header
   const sRow=document.createElement('div');sRow.style.cssText='display:flex;gap:8px;margin-bottom:10px;';
@@ -1352,12 +1358,22 @@ function renderDashboard(){
   const aMap_=absMap(); // last 4 weeks
   const atRisk=Object.entries(aMap_).filter(([,n])=>n>=3).sort((a,b)=>b[1]-a[1]);
   const atRisk4=Object.entries(aMap4).filter(([,n])=>n>=3).sort((a,b)=>b[1]-a[1]);
-  const newS=[...new Set(classRecs.flatMap(r=>(r.students||[]).filter(s=>s.flag==='new').map(s=>s.name)))];
-  const drops=[...new Set(classRecs.flatMap(r=>(r.students||[]).filter(s=>s.flag==='dropped').map(s=>s.name)))];
+  // New students and drop-outs are worked out by comparing the class lists as they
+  // stand against the timetable imported at the start of the course — the same way
+  // the Course tab does it. The old version listed anyone a teacher had ever ticked
+  // as "new" on a register, and that tick never expired, so long-standing students
+  // kept showing up as new.
+  const _base=rosterMap(BASE_SCHEDULE), _now=rosterMap(state.schedule);
+  const newS=Object.keys(_now).filter(k=>!_base[k]).map(k=>_now[k].name).sort();
+  const drops=Object.keys(_base).filter(k=>!_now[k]).map(k=>_base[k].name).sort();
   const unmarked=state.schedule.filter(s=>s.day===todayDay&&(!at||s.teacher===at)).filter(s=>!state.records.some(r=>r.teacher===s.teacher&&r.day===todayDay&&r.time===s.time&&r.date===todayStr));
 
   // ── Per-teacher stats ─────────────────────────────────────────────────
   const tStats={};
+  // Start every teacher who has classes on the timetable at zero, so a teacher who
+  // has not filed a register yet still appears here rather than vanishing.
+  if(!at) TEACHERS.filter(t=>state.schedule.some(s=>s.teacher===t))
+    .forEach(t=>{tStats[t]={abs:0,late:0,present:0,total:0,sessions:0,planning:0,absByWeek:{}};});
   classRecs.forEach(r=>{
     if(!tStats[r.teacher])tStats[r.teacher]={abs:0,late:0,present:0,total:0,sessions:0,planning:0,absByWeek:{}};
     const studs=r.students||[];
@@ -1474,7 +1490,10 @@ function renderDashboard(){
   if(ts.length){
     const lb=ce('lbl','By teacher — attendance rate');wrap.appendChild(lb);
     ts.forEach(([t,st])=>{
-      if(!st.total&&!st.planning)return;
+      // A teacher with no registers yet is still shown, marked as such, rather than
+      // being silently dropped from the list.
+      const noneYet=!st.total&&!st.planning;
+      if(noneYet&&at)return;
       const rate=st.total>0?Math.round(st.present/st.total*100):null;
       const absRate=st.total>0?Math.round(st.abs/st.total*100):0;
       const lateRate=st.total>0?Math.round(st.late/st.total*100):0;
@@ -1484,7 +1503,7 @@ function renderDashboard(){
       // Header row
       const hdr=document.createElement('div');hdr.style.cssText='display:flex;align-items:center;gap:10px;padding:11px 14px 8px;';
       hdr.innerHTML='<span style="font-weight:700;font-size:14px;flex:1;">'+t+'</span>'
-        +'<span style="font-size:12px;color:#64748b;">'+st.sessions+' classes</span>';
+        +'<span style="font-size:12px;color:#64748b;">'+(noneYet?'no registers yet':st.sessions+' classes')+'</span>';
       if(st.planning>0)hdr.innerHTML+='<span style="font-size:11px;background:#eef2ff;color:#4f46e5;padding:2px 7px;border-radius:20px;font-weight:600;">'+st.planning+' planning</span>';
       if(rate!==null){
         const rateCol=rate>=80?'#16a34a':rate>=65?'#d97706':'#dc2626';
