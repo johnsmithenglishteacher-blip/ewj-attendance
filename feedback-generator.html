@@ -55,8 +55,9 @@
   <div style="font-size:12px;color:#b45309;margin-bottom:12px;">Paste your Claude API key below. Get one at <a href="https://console.anthropic.com" target="_blank" style="color:#4f46e5;">console.anthropic.com</a> → API Keys.</div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
     <div>
-      <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:4px;">Firebase DB URL</div>
-      <input id="fbUrl" type="text" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:monospace;"
+      <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:4px;">Firebase DB URL <span style="font-weight:400;color:#94a3b8;">(fixed)</span></div>
+      <input id="fbUrl" type="text" readonly autocomplete="off" autocorrect="off" spellcheck="false"
+        style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:monospace;background:#f8fafc;color:#64748b;"
         value="https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app">
     </div>
     <div>
@@ -105,7 +106,12 @@
 const DEFAULT_FB_URL = 'https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
 const PROXY_URL = 'https://ewj-proxy.johnsmithenglishteacher.workers.dev';
 
-const FB_URL = () => document.getElementById('fbUrl').value.trim();
+// The database address is fixed. The box on the page is display-only: a browser
+// autofilling a stale address into it used to make every request hang until it timed out.
+const FB_URL = () => {
+  const typed = (document.getElementById('fbUrl').value || '').trim().replace(/\/+$/,'');
+  return /^https:\/\/[a-z0-9-]+\.(europe-west1\.)?firebasedatabase\.app$/i.test(typed) ? typed : DEFAULT_FB_URL;
+};
 const API_KEY = () => document.getElementById('apiKey').value.trim();
 
 let records = [];
@@ -126,13 +132,15 @@ async function loadRecords() {
     document.getElementById('apiKey').focus();
     return;
   }
-  log('Loading records from Firebase… (a long history can take a while)');
+  log('Loading from ' + FB_URL() + ' …');
   try {
-    // This downloads the whole register history in one go, so allow for a big one
-    // on a slow line rather than calling it a failure at 15 seconds.
+    // Say which address timed out, so a hang points at the cause instead of hiding it.
     const withTimeout = (url) => Promise.race([
-      fetch(url),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timed out after 45s — Firebase did not respond. If this keeps happening the register history has grown very large; clearing old records will fix it.')), 45000))
+      fetch(url, {cache:'no-store'}),
+      new Promise((_, rej) => setTimeout(() => rej(new Error(
+        'no reply from ' + url + ' after 30 seconds.\n\n'
+        + 'The database itself is fine if the other tools work. This is usually the browser: try a Private window, '
+        + 'or disable ad-blocking / privacy extensions for this page, then load again.')), 30000))
     ]);
     const [rRes, fRes] = await Promise.all([
       withTimeout(FB_URL() + '/records.json'),
