@@ -163,6 +163,26 @@ function fbPath(k){
   return map[k]||null;
 }
 
+// ── This course ───────────────────────────────────────────────────────────
+// Week 36 of 2026 begins Monday 31 August. Everything the Course tab shows is
+// measured from here. Stored in Firebase so every device draws the same line.
+const COURSE_START_DEFAULT = new Date(2026,7,31,0,0,0).getTime();
+let COURSE_START = COURSE_START_DEFAULT;
+
+// Joining and leaving are events, not just edits to a list — without a note of
+// when, "who dropped this course?" is unanswerable. Fire and forget: never let
+// logging get in the way of the change the user actually asked for.
+function logRoster(type, name, slot, scope){
+  try{
+    const id='e'+Date.now()+Math.floor(Math.random()*1000);
+    const ev={ts:Date.now(),type:type,name:name,scope:scope||'class',
+      teacher:slot?slot.teacher:'',day:slot?slot.day:'',time:slot?slot.time:'',course:slot?slot.course:'',
+      by:state.activeTeacher||'John'};
+    fetch(FB_URL+'/rosterEvents/'+id+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(ev)})
+      .catch(()=>{});
+  }catch(e){}
+}
+
 // Read from Firebase (5s timeout)
 async function fbGet(k, fallback){
   const path=fbPath(k);
@@ -472,7 +492,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v9.4</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v9.5</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -487,7 +507,8 @@ function buildAppShell(){
     +'<div id="tab-dashboard" style="display:none;"></div>'
     +'<div id="tab-manage" style="display:none;"></div>'
     +'<div id="tab-hours" style="display:none;"></div>'
-    +'<div id="tab-messages" style="display:none;"></div>';
+    +'<div id="tab-messages" style="display:none;"></div>'
+    +'<div id="tab-course" style="display:none;"></div>';
 }
 
 // ── Render teacher chips ──────────────────────────────────────────────────
@@ -527,6 +548,8 @@ function renderTabBar(){
   const tabs=isReception
     ? [['hours','Hours'],['messages',msgLabel]]
     : [['register','Register'],['log',histLabel],['dashboard','Dashboard'],['hours','Hours'],['manage','Groups'],['messages',msgLabel]];
+  // The Course tab is John's, not the teachers'.
+  if(!state.activeTeacher && !isReception) tabs.push(['course','Course']);
   tabs.forEach(([id,label])=>{
     const b=document.createElement('button');
     b.className='tab'+(state.tab===id?' on':'');
@@ -1797,6 +1820,7 @@ function renderManage(){
           one.onclick=async()=>{
             const ns=state.schedule.map(x=>slotKey(x)===key?{...x,students:(x.students||[]).filter(n=>n!==name)}:x);
             manState.removing=null;
+            logRoster('removed',name,s,'class');
             await saveSchedule(ns);
             renderManage();renderRegister();
           };
@@ -1806,6 +1830,7 @@ function renderManage(){
             all.onclick=async()=>{
               const ns=state.schedule.map(x=>({...x,students:(x.students||[]).filter(n=>n!==name)}));
               manState.removing=null;
+              logRoster('removed',name,s,'all');
               await saveSchedule(ns);
               renderManage();renderRegister();
             };
@@ -1833,6 +1858,7 @@ function renderManage(){
         if(cur.some(x=>x.toLowerCase()===name.toLowerCase())){alert(name+' is already in this class.');return;}
         const ns=state.schedule.map(x=>slotKey(x)===key?{...x,students:[...(x.students||[]),name]}:x);
         delete manState.addName[key];
+        logRoster('added',name,s,'class');
         await saveSchedule(ns);
         renderManage();renderRegister();
       };
@@ -2539,6 +2565,178 @@ function showAtRiskReport(studentName){
   overlay.appendChild(modal);overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};document.body.appendChild(overlay);
 }
 
+// ── Course tab (admin only) ───────────────────────────────────────────────
+const courseState={sub:'comments',q:'',teacher:'',events:null,loading:false};
+
+function recStamp(r){return Date.parse(r.submittedAtFull||'')||Number(r.id)||0;}
+function fmtDay(ms){return new Date(ms).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});}
+
+// Everyone on a roster, as name -> list of classes.
+function rosterMap(list){
+  const m={};
+  (list||[]).forEach(s=>(s.students||[]).forEach(n=>{
+    if(!n)return;
+    const k=n.trim().toLowerCase();
+    if(!m[k])m[k]={name:n.trim(),classes:[]};
+    m[k].classes.push(s.teacher+' · '+s.day+' '+s.time+' · '+s.course);
+  }));
+  return m;
+}
+
+async function loadCourseData(){
+  if(courseState.events!==null||courseState.loading)return;
+  courseState.loading=true;
+  try{
+    const [cRes,eRes]=await Promise.all([
+      fetch(FB_URL+'/courseStart.json').catch(()=>null),
+      fetch(FB_URL+'/rosterEvents.json').catch(()=>null)
+    ]);
+    if(cRes&&cRes.ok){const v=await cRes.json();if(typeof v==='number'&&v>0)COURSE_START=v;}
+    if(eRes&&eRes.ok){const v=await eRes.json();courseState.events=v?Object.values(v):[];}
+    else courseState.events=[];
+  }catch(e){courseState.events=[];}
+  courseState.loading=false;
+  if(state.tab==='course')renderCourse();
+}
+
+function renderCourse(){
+  const wrap=document.getElementById('tab-course');
+  wrap.innerHTML='';
+  if(courseState.events===null){
+    loadCourseData();
+    const l=document.createElement('div');
+    l.style.cssText='text-align:center;padding:26px;color:#94a3b8;font-size:13px;';
+    l.textContent='Loading this course…';
+    wrap.appendChild(l);return;
+  }
+
+  // Header
+  const hd=document.createElement('div');
+  hd.style.cssText='background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:10px;padding:11px 13px;margin-bottom:11px;';
+  hd.innerHTML='<div style="font-weight:800;font-size:15px;color:#3730a3;">Course 2026&#8211;27</div>'
+    +'<div style="font-size:12px;color:#4f46e5;margin-top:2px;">Everything below is from week 36 ('+escHtml(fmtDay(COURSE_START))+') onwards. Last course is not included.</div>';
+  wrap.appendChild(hd);
+
+  // Work out who joined and who left, by comparing the timetable as imported at
+  // the start of the course against the groups as they stand now.
+  const base=rosterMap(BASE_SCHEDULE), now=rosterMap(state.schedule);
+  const joined=[],left=[],moved=[];
+  Object.keys(now).forEach(k=>{ if(!base[k]) joined.push(now[k]); });
+  Object.keys(base).forEach(k=>{
+    if(!now[k]) left.push(base[k]);
+    else {
+      const a=base[k].classes.slice().sort().join('|'), b=now[k].classes.slice().sort().join('|');
+      if(a!==b) moved.push({name:now[k].name,from:base[k].classes,to:now[k].classes});
+    }
+  });
+  // A logged event gives the actual date; without one we only know it happened.
+  const evFor=(name,type)=>{
+    const e=(courseState.events||[]).filter(x=>x&&x.type===type&&x.name&&x.name.toLowerCase()===name.toLowerCase())
+      .sort((a,b)=>b.ts-a.ts)[0];
+    return e?e.ts:0;
+  };
+
+  const comments=state.records
+    .filter(r=>r&&r.comment&&r.comment.trim().length>1&&recStamp(r)>=COURSE_START&&!r.isPlanning)
+    .sort((a,b)=>recStamp(b)-recStamp(a));
+
+  // Sub-tabs
+  const sub=document.createElement('div');
+  sub.style.cssText='display:flex;gap:7px;margin-bottom:11px;flex-wrap:wrap;';
+  [['comments','Comments ('+comments.length+')'],['joined','New students ('+joined.length+')'],
+   ['left','Drop-outs ('+left.length+')'],['moved','Changed class ('+moved.length+')']].forEach(([id,label])=>{
+    const b=document.createElement('button');
+    const on=courseState.sub===id;
+    b.style.cssText='border:1.5px solid '+(on?'#4f46e5':'#e2e8f0')+';background:'+(on?'#4f46e5':'#fff')+';color:'+(on?'#fff':'#475569')
+      +';border-radius:8px;padding:7px 13px;font-size:12.5px;font-family:inherit;font-weight:700;cursor:pointer;';
+    b.textContent=label;
+    b.onclick=()=>{courseState.sub=id;renderCourse();};
+    sub.appendChild(b);
+  });
+  wrap.appendChild(sub);
+
+  const body=document.createElement('div');
+  wrap.appendChild(body);
+  const empty=(msg)=>{
+    const d=document.createElement('div');
+    d.style.cssText='text-align:center;padding:24px;color:#94a3b8;font-size:13px;background:#f8fafc;border:1.5px dashed #e2e8f0;border-radius:11px;';
+    d.textContent=msg;return d;
+  };
+
+  if(courseState.sub==='comments'){
+    // Filters
+    const bar=document.createElement('div');
+    bar.style.cssText='display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;';
+    const q=document.createElement('input');
+    q.type='text';q.placeholder='Search comments, teacher or class…';q.value=courseState.q;
+    q.style.cssText='flex:1;min-width:170px;padding:8px 11px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;';
+    let t=null;
+    q.oninput=e=>{courseState.q=e.target.value;clearTimeout(t);t=setTimeout(()=>{renderCourse();
+      const n=document.querySelector('#tab-course input[type=text]');if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length);}},260);};
+    bar.appendChild(q);
+    const tSel=document.createElement('select');
+    tSel.style.cssText='padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;';
+    const names=[...new Set(comments.map(r=>r.teacher))].sort();
+    tSel.innerHTML='<option value="">All teachers</option>'+names.map(n=>'<option'+(n===courseState.teacher?' selected':'')+'>'+escHtml(n)+'</option>').join('');
+    tSel.onchange=e=>{courseState.teacher=e.target.value;renderCourse();};
+    bar.appendChild(tSel);
+    body.appendChild(bar);
+
+    const ql=courseState.q.trim().toLowerCase();
+    const list=comments.filter(r=>(!courseState.teacher||r.teacher===courseState.teacher)
+      &&(!ql||((r.comment||'')+' '+(r.teacher||'')+' '+(r.course||'')).toLowerCase().includes(ql)));
+
+    if(!list.length){body.appendChild(empty(comments.length?'No comment matches that search.':'No lesson comments yet this course.'));}
+    else list.forEach(r=>{
+      const c=document.createElement('div');
+      c.style.cssText='background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:11px 13px;margin-bottom:8px;';
+      c.innerHTML='<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px;">'
+        +'<span style="font-weight:700;font-size:13px;">'+escHtml(r.course||'')+'</span>'
+        +'<span style="font-size:12px;color:#64748b;">'+escHtml(r.teacher||'')+'</span>'
+        +'<span style="font-size:11px;color:#94a3b8;margin-left:auto;">'+escHtml(r.date||'')+(r.week?' &middot; wk '+escHtml(String(r.week)):'')+'</span></div>'
+        +'<div style="font-size:13px;color:#1e293b;line-height:1.55;white-space:pre-wrap;">'+escHtml(r.comment)+'</div>';
+      body.appendChild(c);
+    });
+    return;
+  }
+
+  const personCard=(name,lines,ts,tint)=>{
+    const c=document.createElement('div');
+    c.style.cssText='background:#fff;border:1.5px solid '+tint+';border-radius:10px;padding:11px 13px;margin-bottom:8px;';
+    c.innerHTML='<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">'
+      +'<span style="font-weight:700;font-size:14px;">'+escHtml(name)+'</span>'
+      +'<span style="font-size:11px;color:#94a3b8;margin-left:auto;">'+(ts?escHtml(fmtDay(ts)):'date not recorded')+'</span></div>'
+      +lines.map(l=>'<div style="font-size:12.5px;color:#475569;margin-top:3px;">'+escHtml(l)+'</div>').join('');
+    return c;
+  };
+
+  if(courseState.sub==='joined'){
+    if(!joined.length)body.appendChild(empty('No students have joined since the course started.'));
+    else joined.sort((a,b)=>a.name.localeCompare(b.name))
+      .forEach(p=>body.appendChild(personCard(p.name,p.classes,evFor(p.name,'added'),'#bbf7d0')));
+  }
+  if(courseState.sub==='left'){
+    if(!left.length)body.appendChild(empty('Nobody has left since the course started.'));
+    else left.sort((a,b)=>a.name.localeCompare(b.name))
+      .forEach(p=>body.appendChild(personCard(p.name,p.classes.map(c=>'was in '+c),evFor(p.name,'removed'),'#fecaca')));
+  }
+  if(courseState.sub==='moved'){
+    if(!moved.length)body.appendChild(empty('No class changes since the course started.'));
+    else moved.sort((a,b)=>a.name.localeCompare(b.name)).forEach(p=>{
+      const lines=[];
+      p.from.filter(c=>!p.to.includes(c)).forEach(c=>lines.push('left  '+c));
+      p.to.filter(c=>!p.from.includes(c)).forEach(c=>lines.push('joined '+c));
+      body.appendChild(personCard(p.name,lines,0,'#fde68a'));
+    });
+  }
+
+  const note=document.createElement('div');
+  note.style.cssText='font-size:12px;color:#94a3b8;margin-top:12px;line-height:1.6;';
+  note.textContent='Compared against the timetable as imported at the start of this course. '
+    +'Changes made from now on are stamped with the date; ones made before this tab existed show as “date not recorded”.';
+  wrap.appendChild(note);
+}
+
 function renderAll(){
   renderTeacherChips();
   renderTabBar();
@@ -2551,12 +2749,14 @@ function renderAll(){
   document.getElementById('tab-manage').style.display=state.tab==='manage'?'':'none';
   document.getElementById('tab-hours').style.display=state.tab==='hours'?'':'none';
   document.getElementById('tab-messages').style.display=state.tab==='messages'?'':'none';
+  document.getElementById('tab-course').style.display=state.tab==='course'?'':'none';
   if(state.tab==='register')renderRegister();
   if(state.tab==='log')renderLog();
   if(state.tab==='dashboard')renderDashboard();
   if(state.tab==='manage')renderManage();
   if(state.tab==='hours')renderHours();
   if(state.tab==='messages')renderMessages();
+  if(state.tab==='course')renderCourse();
 }
 
 // Boot
