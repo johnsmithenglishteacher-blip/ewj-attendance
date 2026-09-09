@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EWJ — Remove records from before the reset</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#f8fafc;color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+       font-size:15px;line-height:1.55;padding:24px 16px 64px}
+  .wrap{max-width:780px;margin:0 auto}
+  h1{font-size:21px;font-weight:800;margin-bottom:4px}
+  .sub{color:#64748b;font-size:13.5px;margin-bottom:20px;line-height:1.6}
+  .card{background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:16px 18px;margin-bottom:14px}
+  .card h2{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:11px}
+  button{font-family:inherit;font-size:13px;font-weight:700;border:none;border-radius:9px;
+         padding:10px 17px;cursor:pointer;background:#4f46e5;color:#fff}
+  button:disabled{background:#cbd5e1;color:#64748b;cursor:not-allowed}
+  button.ghost{background:#fff;color:#4f46e5;border:1.5px solid #c7d2fe}
+  button.danger{background:#b91c1c}
+  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  .stat{display:flex;gap:26px;flex-wrap:wrap;margin:4px 0 10px}
+  .stat div{font-size:12px;color:#64748b}
+  .stat b{display:block;font-size:22px;color:#0f172a;font-weight:800;line-height:1.25}
+  .stat b.red{color:#b91c1c}
+  .stat b.green{color:#15803d}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #f1f5f9}
+  th{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .note{font-size:12.5px;color:#64748b;margin-top:9px;line-height:1.55}
+  .err{background:#fef2f2;border:1.5px solid #fca5a5;color:#b91c1c;border-radius:9px;padding:11px 13px;margin-bottom:12px;font-size:13px;display:none}
+  .ok{background:#f0fdf4;border:1.5px solid #86efac;color:#15803d;border-radius:9px;padding:11px 13px;margin-bottom:12px;font-size:13px;display:none}
+  .warn{background:#fffbeb;border:1.5px solid #fcd34d;color:#854d0e;border-radius:9px;padding:12px 14px;font-size:13px;line-height:1.6;margin-bottom:14px}
+  #log{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#0f172a;color:#e2e8f0;
+       border-radius:9px;padding:12px;max-height:260px;overflow:auto;white-space:pre-wrap;margin-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Remove records from before the reset</h1>
+<p class="sub">When you cleared the absences, one computer still held the old registers in its browser and pushed them back up. This deletes <b>only</b> the registers dated before the reset, and leaves everything your teachers have taken since then exactly where it is.</p>
+
+<div class="warn"><b>Upload the new index.html first.</b> Version 9.4 is the one that stops a stale browser copy coming back. If you purge before that goes up, the same thing can happen again the next time the database is emptied.</div>
+
+<div class="err" id="err"></div>
+<div class="ok" id="ok"></div>
+
+<div class="card">
+  <h2>Step 1 — See what is there</h2>
+  <div class="row"><button id="b1">Read records from Firebase</button></div>
+  <div id="summary"></div>
+</div>
+
+<div class="card">
+  <h2>Step 2 — Save a copy of what will go</h2>
+  <div class="row"><button id="b2" disabled>Download the old records</button></div>
+  <div class="note">Downloads <code>records-before-reset.json</code>. Step 3 stays locked until you do. Keep it — it is the only copy once they are deleted.</div>
+</div>
+
+<div class="card">
+  <h2>Step 3 — Delete them</h2>
+  <div class="row"><button id="b3" class="danger" disabled>Delete the old records</button></div>
+  <div class="note">Deletes only the registers listed above as “before the reset”. Nothing else in the database is touched.</div>
+</div>
+
+<div id="log"></div>
+
+</div>
+
+<script>
+const FB='https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
+const L=document.getElementById('log'),E=document.getElementById('err'),O=document.getElementById('ok');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight;}
+function err(m){E.textContent=m;E.style.display='block';O.style.display='none';}
+function ok(m){O.textContent=m;O.style.display='block';E.style.display='none';}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+let clearedAt=0, oldKeys=[], oldRecs=[], keepCount=0, downloaded=false;
+
+// A record's moment: prefer the full ISO stamp, fall back to the numeric id.
+function stampOf(r,key){
+  const t=Date.parse((r&&r.submittedAtFull)||'')||0;
+  if(t)return t;
+  const n=Number(String(key||'').replace(/^r/,''))||Number(r&&r.id)||0;
+  return n;
+}
+function dstr(ms){return new Date(ms).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+
+document.getElementById('b1').onclick=async()=>{
+  E.style.display='none';log('Reading …');
+  try{
+    const [cRes,rRes]=await Promise.all([fetch(FB+'/clearedAt.json'),fetch(FB+'/records.json')]);
+    if(!cRes.ok||!rRes.ok)throw new Error('HTTP '+(cRes.ok?rRes.status:cRes.status));
+    const cv=await cRes.json();
+    clearedAt=typeof cv==='number'?cv:0;
+    if(!clearedAt)throw new Error('No reset marker found in the database, so there is nothing to compare against. Stopping rather than guessing.');
+    const recs=await rRes.json()||{};
+    log('Reset marker: '+dstr(clearedAt));
+
+    oldKeys=[];oldRecs=[];keepCount=0;
+    const weeks={};
+    Object.entries(recs).forEach(([k,r])=>{
+      if(!r)return;
+      const t=stampOf(r,k);
+      if(t&&t<=clearedAt){
+        oldKeys.push(k);oldRecs.push(r);
+        const d=new Date(t),mk=d.toLocaleString('en-GB',{month:'short',year:'numeric'});
+        weeks[mk]=(weeks[mk]||0)+1;
+      } else keepCount++;
+    });
+    log('Before the reset: '+oldKeys.length+'   After: '+keepCount);
+
+    let h='<div class="stat">'
+      +'<div>To delete<b class="red">'+oldKeys.length+'</b></div>'
+      +'<div>To keep<b class="green">'+keepCount+'</b></div>'
+      +'<div>Reset was<b style="font-size:14px;font-weight:700">'+esc(dstr(clearedAt))+'</b></div>'
+      +'</div>';
+    if(oldKeys.length){
+      const rows=Object.entries(weeks).sort((a,b)=>new Date('1 '+a[0])-new Date('1 '+b[0]));
+      h+='<table><tr><th>Month</th><th>Registers to delete</th></tr>'
+        +rows.map(([m,n])=>'<tr><td>'+esc(m)+'</td><td>'+n+'</td></tr>').join('')+'</table>';
+      document.getElementById('b2').disabled=false;
+    } else {
+      h+='<p class="note">Nothing to do — every register in the database was taken after the reset.</p>';
+    }
+    document.getElementById('summary').innerHTML=h;
+  }catch(e){err('Could not read: '+e.message);log('FAILED: '+e.message);}
+};
+
+document.getElementById('b2').onclick=()=>{
+  const payload={};
+  oldKeys.forEach((k,i)=>payload[k]=oldRecs[i]);
+  const b=new Blob([JSON.stringify({clearedAt:clearedAt,records:payload},null,1)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='records-before-reset.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  downloaded=true;
+  document.getElementById('b3').disabled=false;
+  log('Downloaded '+oldKeys.length+' records.');
+};
+
+document.getElementById('b3').onclick=async()=>{
+  if(!downloaded||!oldKeys.length)return;
+  if(!confirm('Delete '+oldKeys.length+' registers from before '+dstr(clearedAt)+'?\n\nThe '+keepCount+' registers taken since then are not touched.'))return;
+  try{
+    log('Deleting …');
+    // One PATCH setting each old key to null removes exactly those children.
+    const patch={};oldKeys.forEach(k=>patch[k]=null);
+    const r=await fetch(FB+'/records.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const after=await (await fetch(FB+'/records.json?shallow=true')).json()||{};
+    const left=Object.keys(after).length;
+    log('Verified: '+left+' registers remain.');
+    if(left===keepCount) ok('Done — '+oldKeys.length+' old registers removed, '+left+' kept. That matches exactly what the preview said.');
+    else ok('Removed. '+left+' registers remain (the preview expected '+keepCount+' — a teacher may have saved a register while this ran, which is fine).');
+    document.getElementById('b3').disabled=true;
+  }catch(e){err('Delete failed: '+e.message+'. Nothing partial happens — the delete is one request. Try again.');log('FAILED: '+e.message);}
+};
+</script>
+</body>
+</html>
