@@ -33,7 +33,7 @@ button.small{padding:6px 12px;font-size:12px}
 <div class="wrap">
 
 <h1>Find damaged records</h1>
-<p class="sub">A register needs a teacher, a day, a time and a course. Anything missing those is usually a leftover stub — created when a reminder or a piece of feedback was written against a register that had already been deleted. This finds them, shows you exactly what is in each one, and lets you remove them.</p>
+<p class="sub">A register needs an id, a teacher, a day, a time and a course. Anything missing those is usually a leftover stub — created when a reminder or a piece of feedback was written against a register that had already been deleted. This finds them, shows you exactly what is in each one, and lets you remove them.</p>
 
 <div class="err" id="err"></div>
 <div class="ok" id="ok"></div>
@@ -80,6 +80,9 @@ document.getElementById('b1').onclick=async()=>{
       total++;
       if(!r||typeof r!=='object'){bad[k]={__raw:r};return;}
       const missing=['teacher','day','time','course'].filter(f=>!r[f]||typeof r[f]!=='string');
+      // An id matters as much as the rest: without one the register has no identity
+      // and the app cannot show it at all, even though every other field is fine.
+      if(!r.id) missing.unshift('id');
       if(missing.length){bad[k]=r;bad[k].__missing=missing;}
     });
     const n=Object.keys(bad).length;
@@ -110,7 +113,7 @@ document.getElementById('b1').onclick=async()=>{
       list.appendChild(d);
     });
     document.getElementById('bulkCard').style.display=n?'':'none';
-    if(!n)ok('Nothing damaged — every record has a teacher, day, time and course.');
+    if(!n)ok('Nothing damaged — every record has an id, teacher, day, time and course.');
   }catch(e){err('Could not read: '+e.message);log('FAILED: '+e.message);}
 };
 
