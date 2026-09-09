@@ -313,28 +313,32 @@ async function bootFromFirebase(){
   // Load feedback and merge into records
   try { await loadFeedback(); } catch(e){ console.warn('Feedback load failed:',e); }
 
-  const rawRecords = Array.isArray(fbRecords) ? fbRecords : Object.values(fbRecords || {});
-  const cleanRecords = rawRecords.filter(r=>r&&r.id&&r.teacher).sort((a,b)=>(a.id||0)-(b.id||0));
-  const cachedRecords = lsGet('ewj-records', []).filter(r=>r&&r.id&&r.teacher);
-  // Use whichever has more records
-  state.records = cleanRecords.length >= cachedRecords.length ? cleanRecords : cachedRecords;
-  console.log('Records loaded - Firebase:', cleanRecords.length, 'Cache:', cachedRecords.length, 'Using:', state.records.length);
-  // Was the database cleared deliberately (start of a new course)? If so, a local
-  // cache older than that moment must be dropped, not pushed back up.
+  // Was the database cleared deliberately (start of a new course)? Read this FIRST:
+  // anything in the local cache from before that moment is dead and must never be
+  // pushed back up, even if the same cache also holds newer, legitimate registers.
   let clearedAt=0;
   try{
     const cRes=await fetch(FB_URL+'/clearedAt.json');
     if(cRes.ok){const v=await cRes.json();clearedAt=typeof v==='number'?v:0;}
   }catch(e){}
-  if(cleanRecords.length===0 && state.records.length>0 && clearedAt){
-    const newest=state.records.reduce((m,r)=>{
-      const t=Date.parse(r.submittedAtFull||'')||0;return t>m?t:m;
-    },0);
-    if(newest<=clearedAt){
-      console.log('Records were cleared on '+new Date(clearedAt).toISOString()+' — dropping stale local cache of '+state.records.length);
-      state.records=[];lsSet('ewj-records',[]);
-    }
+  const beforeClear=r=>{
+    if(!clearedAt)return false;
+    const t=Date.parse(r.submittedAtFull||'')||Number(r.id)||0;
+    return t>0 && t<=clearedAt;
+  };
+
+  const rawRecords = Array.isArray(fbRecords) ? fbRecords : Object.values(fbRecords || {});
+  const cleanRecords = rawRecords.filter(r=>r&&r.id&&r.teacher).sort((a,b)=>(a.id||0)-(b.id||0));
+  const allCached = lsGet('ewj-records', []).filter(r=>r&&r.id&&r.teacher);
+  // Drop stale cached records one by one rather than deciding for the whole set.
+  const cachedRecords = allCached.filter(r=>!beforeClear(r));
+  if(cachedRecords.length !== allCached.length){
+    console.log('Dropping '+(allCached.length-cachedRecords.length)+' cached records from before the clear of '+new Date(clearedAt).toISOString());
+    lsSet('ewj-records', cachedRecords);
   }
+  // Use whichever has more records
+  state.records = cleanRecords.length >= cachedRecords.length ? cleanRecords : cachedRecords;
+  console.log('Records loaded - Firebase:', cleanRecords.length, 'Cache:', cachedRecords.length, 'Using:', state.records.length);
   // If Firebase was empty but we have local records, restore them to Firebase
   if(cleanRecords.length===0 && state.records.length>0){
     console.log('Restoring records to Firebase...');
@@ -468,7 +472,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v9.3</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v9.4</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
