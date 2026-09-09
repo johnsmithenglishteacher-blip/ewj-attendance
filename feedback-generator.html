@@ -155,7 +155,9 @@ async function loadRecords() {
 
     const allRecs = rData ? (Array.isArray(rData) ? rData : Object.values(rData)).filter(r => r && r.teacher && !r.isPlanning) : [];
     records = allRecs.filter(r => r.comment && r.comment.trim().length > 10);
-    missingCommentRecs = allRecs.filter(r => (!r.comment || r.comment.trim().length <= 10) && !r.nudgeSent);
+    // John is the CEO, not someone to chase for lesson comments — he is never listed
+    // as missing one and never receives a reminder.
+    missingCommentRecs = allRecs.filter(r => (!r.comment || r.comment.trim().length <= 10) && !r.nudgeSent && r.teacher !== 'John');
     feedback = {};
     if (fData) Object.values(fData).forEach(f => { if (f && f.recordId) feedback[f.recordId] = f; });
     records.forEach(r => {
