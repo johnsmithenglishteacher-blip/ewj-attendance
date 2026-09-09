@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EWJ Tools &amp; Links</title>
+<style>
+  :root{
+    --ground:#f4f7fb;--surface:#fff;--sunk:#eef3fa;--ink:#16233a;--ink-soft:#42556f;
+    --muted:#6d7f9c;--line:#dde5f0;--line-soft:#e9eff7;--blue:#2f6fb5;--blue-deep:#1d4f8a;
+    --red:#d9372c;--amber:#8a6212;--amber-bg:#fdf6e3;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--ground:#0f1622;--surface:#182231;--sunk:#131c29;--ink:#e7edf7;--ink-soft:#bcc9dc;
+      --muted:#8798b3;--line:#28354a;--line-soft:#212c3e;--blue:#6ba6e6;--blue-deep:#94c1f2;
+      --red:#f0736a;--amber:#e5c579;--amber-bg:#2a2415;}
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--ground);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    font-size:16px;line-height:1.55;padding:38px 20px 64px}
+  .wrap{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:30px}
+  .masthead{display:flex;align-items:center;gap:15px}
+  .masthead h1{font-family:Georgia,'Times New Roman',serif;font-weight:600;font-size:27px;
+    line-height:1.15;margin-bottom:3px;letter-spacing:-.012em}
+  .masthead p{color:var(--muted);font-size:14.5px}
+  .group{display:flex;flex-direction:column;gap:9px}
+  .group-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .group-head h2{font-size:11.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.11em;color:var(--blue-deep)}
+  .group-head span{font-size:13px;color:var(--muted)}
+  .list{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .row{display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:4px 18px;
+    padding:13px 16px;text-decoration:none;color:inherit;border-top:1px solid var(--line-soft)}
+  .row:first-child{border-top:none}
+  .row:hover,.row:focus-visible{background:var(--sunk)}
+  .row:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+  .row .name{font-weight:600;font-size:15.5px}
+  .row .why{grid-column:1;font-size:13.5px;color:var(--muted);line-height:1.45}
+  .row .file{grid-row:1;grid-column:2;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:12px;color:var(--ink-soft);background:var(--sunk);border:1px solid var(--line-soft);
+    border-radius:5px;padding:2px 7px;white-space:nowrap}
+  .row.ext .file{background:none;border:none;padding:2px 0;color:var(--muted)}
+  .note{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--blue);
+    border-radius:8px;padding:14px 16px;font-size:14px;color:var(--ink-soft)}
+  .note strong{color:var(--ink)}
+  .note code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
+    background:var(--sunk);border-radius:4px;padding:1px 5px}
+  .checklist{background:var(--amber-bg);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .checklist h3{font-size:11.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.11em;color:var(--amber);margin-bottom:8px}
+  .checklist ul{margin:0;padding-left:18px;font-size:14px;color:var(--ink-soft)}
+  .checklist li{margin-bottom:5px}
+  footer{color:var(--muted);font-size:13px;text-align:center;
+    border-top:1px solid var(--line);padding-top:18px}
+  @media (max-width:520px){
+    body{padding:26px 14px 48px}
+    .row{grid-template-columns:1fr}
+    .row .file{grid-row:auto;grid-column:1;justify-self:start;margin-top:4px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+      <path d="M6 24a16 16 0 0 1 16-16v7a9 9 0 0 0-9 9z" fill="#d9372c"/>
+      <path d="M38 20a16 16 0 0 1-16 16v-7a9 9 0 0 0 9-9z" fill="#2f6fb5"/>
+    </svg>
+    <div>
+      <h1>English with John — Attendance Tools</h1>
+      <p>Balaguer &amp; Artesa de Segre · 2026–27</p>
+    </div>
+  </header>
+
+  <section class="group">
+    <div class="group-head"><h2>Every day</h2><span>Registers, briefings, feedback</span></div>
+    <div class="list">
+      <a class="row" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/">
+        <span class="name">Attendance Register</span>
+        <span class="file">/ewj-attendance/</span>
+        <span class="why">Take the register, manage groups, add, move, search or remove students</span>
+      </a>
+      <a class="row" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/EWJ-morning.html">
+        <span class="name">Morning Briefing</span>
+        <span class="file">EWJ-morning.html</span>
+        <span class="why">The day ahead — classes, absences, what needs chasing</span>
+      </a>
+      <a class="row" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/feedback-generator.html">
+        <span class="name">Feedback Generator</span>
+        <span class="file">feedback-generator.html</span>
+        <span class="why">Turns teachers' lesson comments into parent feedback. Needs your Claude API key</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="group">
+    <div class="group-head"><h2>Start of year</h2><span>Run once, then leave alone</span></div>
+    <div class="list">
+      <a class="row" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/update-schedule.html">
+        <span class="name">Load a new timetable</span>
+        <span class="file">update-schedule.html</span>
+        <span class="why">Backs up the current timetable, shows what changes, then applies it. Run outside class hours</span>
+      </a>
+      <a class="row" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/add-rooms.html">
+        <span class="name">Add rooms to the timetable</span>
+        <span class="file">add-rooms.html</span>
+        <span class="why">Puts a room and its seat count on every class. Only adds fields — student lists untouched. Rooms show in the admin view only, never to teachers</span>
+      </a>
+      <a class="row" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/reset-absences.html">
+        <span class="name">Reset absences for a new course</span>
+        <span class="file">reset-absences.html</span>
+        <span class="why">Archives every register to file, then clears them so the year starts clean. Can restore</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="group">
+    <div class="group-head"><h2>Now and then</h2><span>Reporting and repairs</span></div>
+    <div class="list">
+      <a class="row" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/ewj-reports.html">
+        <span class="name">Reports</span>
+        <span class="file">ewj-reports.html</span>
+        <span class="why">Attendance reports and student progress summaries</span>
+      </a>
+      <a class="row" href="https://johnsmithenglishteacher-blip.github.io/ewj-attendance/cleanup.html">
+        <span class="name">Cleanup Tool</span>
+        <span class="file">cleanup.html</span>
+        <span class="why">Removes duplicate records — run only if duplicates appear</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="group">
+    <div class="group-head"><h2>Behind the scenes</h2><span>Where it all lives</span></div>
+    <div class="list">
+      <a class="row ext" href="https://github.com/johnsmithenglishteacher-blip/ewj-attendance">
+        <span class="name">GitHub repository</span>
+        <span class="file">github.com ↗</span>
+        <span class="why">The files themselves. Upload here to change any tool above</span>
+      </a>
+      <a class="row ext" href="https://console.firebase.google.com/project/emglish-with-john/database/emglish-with-john-default-rtdb/data">
+        <span class="name">Firebase database</span>
+        <span class="file">console.firebase.google.com ↗</span>
+        <span class="why">Every register, timetable and clock-in is stored here</span>
+      </a>
+      <a class="row ext" href="https://console.anthropic.com">
+        <span class="name">Claude API console</span>
+        <span class="file">console.anthropic.com ↗</span>
+        <span class="why">API key and credit balance for the feedback generator</span>
+      </a>
+      <a class="row ext" href="https://englishwithjohn.es/attendance-register/">
+        <span class="name">Teachers' Lounge page</span>
+        <span class="file">englishwithjohn.es ↗</span>
+        <span class="why">Password-protected page teachers reach the register from</span>
+      </a>
+    </div>
+  </section>
+
+  <div class="note">
+    <p><strong>If a page looks out of date, check the address bar.</strong> An address starting <code>file:///Users/…</code> is a copy sitting on that one computer — it won't match what your teachers see and it won't update. Only <code>https://johnsmithenglishteacher-blip.github.io/…</code> is the live tool.</p>
+  </div>
+
+  <div class="checklist">
+    <h3>End of course</h3>
+    <ul>
+      <li>Export the final CSV from the History tab for your records</li>
+      <li>Lock the database: Firebase → Realtime Database → Rules → set <code>.read</code> and <code>.write</code> to <code>false</code></li>
+      <li>Keep the API key private — never commit it to the repository, which is public</li>
+    </ul>
+  </div>
+
+  <footer>English with John SLU · Cambridge University Press Learning Partner</footer>
+
+</div>
+</body>
+</html>
