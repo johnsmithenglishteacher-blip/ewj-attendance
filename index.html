@@ -503,7 +503,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v9.6</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v9.7</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -959,20 +959,38 @@ function renderRegister(){
 // ── Log tab ───────────────────────────────────────────────────────────────
 const logState={search:'',editing:null,draft:'',expanded:null,editingStudents:null,filterTeacher:'',filterDay:'',filterWeek:'',filterNoComment:false};
 
+// Week has been stored both as 36 and as "Week 36" over the life of this app.
+// Compare on the number so the week filter matches either.
+function weekVal(w){
+  if(w==null)return null;
+  const m=String(w).match(/\d+/);
+  return m?Number(m[0]):null;
+}
 function renderLog(){
   const wrap=document.getElementById('tab-log');wrap.innerHTML='';
   const at=state.activeTeacher;
-  let recs=[...state.records];
+  // One malformed record used to throw here and leave the whole tab blank, with
+  // nothing on screen to say why. Drop bad records instead, and keep going.
+  let recs=state.records.filter(r=>r&&r.id&&typeof r.teacher==='string');
+  const skipped=state.records.length-recs.length;
   if(at)recs=recs.filter(r=>r.teacher===at);
   if(logState.filterTeacher) recs=recs.filter(r=>r.teacher===logState.filterTeacher);
   if(logState.filterDay)     recs=recs.filter(r=>r.day===logState.filterDay);
-  if(logState.filterWeek)    recs=recs.filter(r=>r.week===logState.filterWeek);
+  if(logState.filterWeek)    recs=recs.filter(r=>weekVal(r.week)===weekVal(logState.filterWeek));
   if(logState.filterNoComment) recs=recs.filter(r=>!r.commentDone);
   if(logState.search.trim()){
     const q=logState.search.toLowerCase();
-    recs=recs.filter(r=>r.teacher.toLowerCase().includes(q)||r.course.toLowerCase().includes(q)||r.students.some(s=>s.name.toLowerCase().includes(q)));
+    recs=recs.filter(r=>(r.teacher||'').toLowerCase().includes(q)
+      ||(r.course||'').toLowerCase().includes(q)
+      ||(r.students||[]).some(s=>s&&(s.name||'').toLowerCase().includes(q)));
   }
-  recs.sort((a,b)=>{const tc=a.teacher.localeCompare(b.teacher);return tc!==0?tc:b.id-a.id;});
+  recs.sort((a,b)=>{const tc=(a.teacher||'').localeCompare(b.teacher||'');return tc!==0?tc:(b.id||0)-(a.id||0);});
+  if(skipped>0){
+    const w=document.createElement('div');
+    w.style.cssText='background:#fef9c3;border:1.5px solid #fde047;color:#854d0e;border-radius:9px;padding:9px 12px;margin-bottom:10px;font-size:12.5px;';
+    w.textContent=skipped+' damaged record'+(skipped>1?'s':'')+' hidden — they are missing a teacher name. Everything else is shown below.';
+    wrap.appendChild(w);
+  }
   const pending=state.records.filter(r=>!r.commentDone&&(!at||r.teacher===at)).length;
 
   // Search + header
@@ -1003,9 +1021,11 @@ function renderLog(){
   dDiv.appendChild(dSel);filterBar.appendChild(dDiv);
 
   // Week filter — build from existing records
-  const weeks=[...new Set(state.records.map(r=>r.week).filter(Boolean))].sort((a,b)=>{
-    const na=parseInt(a.replace('Week ','')),nb=parseInt(b.replace('Week ',''));return nb-na;
-  });
+  // Week is a plain number on some records and the text "Week 36" on others.
+  // Sorting on the digits keeps both working — calling .replace on a number
+  // here is what threw and left this whole tab blank.
+  const weeks=[...new Set(state.records.map(r=>r.week).filter(w=>w!=null&&w!==''))]
+    .sort((a,b)=>(weekVal(b)||0)-(weekVal(a)||0));
   const wDiv=document.createElement('div');
   const wSel=document.createElement('select');wSel.style.cssText='width:100%;padding:7px 9px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:inherit;background:#fff;outline:none;';
   wSel.innerHTML='<option value="">All weeks</option>'+weeks.map(w=>'<option'+(w===logState.filterWeek?' selected':'')+'>'+w+'</option>').join('');
@@ -2761,13 +2781,25 @@ function renderAll(){
   document.getElementById('tab-hours').style.display=state.tab==='hours'?'':'none';
   document.getElementById('tab-messages').style.display=state.tab==='messages'?'':'none';
   document.getElementById('tab-course').style.display=state.tab==='course'?'':'none';
-  if(state.tab==='register')renderRegister();
-  if(state.tab==='log')renderLog();
-  if(state.tab==='dashboard')renderDashboard();
-  if(state.tab==='manage')renderManage();
-  if(state.tab==='hours')renderHours();
-  if(state.tab==='messages')renderMessages();
-  if(state.tab==='course')renderCourse();
+  // If a tab throws, say so on screen. A blank panel tells nobody anything.
+  const draw=(id,fn)=>{
+    try{ fn(); }
+    catch(e){
+      console.error('Tab "'+id+'" failed:',e);
+      const el=document.getElementById('tab-'+id);
+      if(el)el.innerHTML='<div style="background:#fef2f2;border:1.5px solid #fca5a5;color:#b91c1c;'
+        +'border-radius:10px;padding:13px 15px;font-size:13px;line-height:1.6;">'
+        +'<b>This tab could not be drawn.</b><br>'+escHtml(e.message)
+        +'<br><span style="color:#7f1d1d;font-size:12px;">Try Clear filters, or reload the page. Your data is safe — this is a display problem.</span></div>';
+    }
+  };
+  if(state.tab==='register')draw('register',renderRegister);
+  if(state.tab==='log')draw('log',renderLog);
+  if(state.tab==='dashboard')draw('dashboard',renderDashboard);
+  if(state.tab==='manage')draw('manage',renderManage);
+  if(state.tab==='hours')draw('hours',renderHours);
+  if(state.tab==='messages')draw('messages',renderMessages);
+  if(state.tab==='course')draw('course',renderCourse);
 }
 
 // Boot
