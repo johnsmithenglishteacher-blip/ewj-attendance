@@ -126,11 +126,13 @@ async function loadRecords() {
     document.getElementById('apiKey').focus();
     return;
   }
-  log('Loading records from Firebase…');
+  log('Loading records from Firebase… (a long history can take a while)');
   try {
+    // This downloads the whole register history in one go, so allow for a big one
+    // on a slow line rather than calling it a failure at 15 seconds.
     const withTimeout = (url) => Promise.race([
       fetch(url),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timed out after 15s — Firebase did not respond')), 15000))
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timed out after 45s — Firebase did not respond. If this keeps happening the register history has grown very large; clearing old records will fix it.')), 45000))
     ]);
     const [rRes, fRes] = await Promise.all([
       withTimeout(FB_URL() + '/records.json'),
