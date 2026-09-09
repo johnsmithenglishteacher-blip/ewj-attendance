@@ -169,6 +169,17 @@ function fbPath(k){
 const COURSE_START_DEFAULT = new Date(2026,7,31,0,0,0).getTime();
 let COURSE_START = COURSE_START_DEFAULT;
 
+// When the registers were deliberately cleared. A record from before that moment is
+// dead: it must never be merged into memory, written to the cache, or sent back to
+// Firebase — whichever device is still holding a copy of it, and whichever version
+// of this app that device happens to be running.
+let CLEARED_AT = 0;
+function isStaleRecord(r){
+  if(!CLEARED_AT||!r) return false;
+  const t=Date.parse(r.submittedAtFull||'')||Number(r.id)||0;
+  return t>0 && t<=CLEARED_AT;
+}
+
 // Joining and leaving are events, not just edits to a list — without a note of
 // when, "who dropped this course?" is unanswerable. Fire and forget: never let
 // logging get in the way of the change the user actually asked for.
@@ -210,8 +221,10 @@ async function fbSet(k, v){
     const t=new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),5000));
     if(k==='ewj-records'&&Array.isArray(v)){
       // Write each record individually — NEVER bulk PUT the whole records node
-      // This ensures no write can delete other teachers' records
-      await Promise.all(v.filter(r=>r&&r.id).map(r=>
+      // This ensures no write can delete other teachers' records.
+      // Cleared records are dropped here too: this loop is how a stale cache
+      // used to push a whole deleted course back into the database.
+      await Promise.all(v.filter(r=>r&&r.id&&!isStaleRecord(r)).map(r=>
         Promise.race([
           fetch(FB_URL+'/records/r'+r.id+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)}),
           new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000))
@@ -341,11 +354,8 @@ async function bootFromFirebase(){
     const cRes=await fetch(FB_URL+'/clearedAt.json');
     if(cRes.ok){const v=await cRes.json();clearedAt=typeof v==='number'?v:0;}
   }catch(e){}
-  const beforeClear=r=>{
-    if(!clearedAt)return false;
-    const t=Date.parse(r.submittedAtFull||'')||Number(r.id)||0;
-    return t>0 && t<=clearedAt;
-  };
+  CLEARED_AT=clearedAt;   // every later merge, cache write and upload checks this
+  const beforeClear=r=>isStaleRecord(r);
 
   const rawRecords = Array.isArray(fbRecords) ? fbRecords : Object.values(fbRecords || {});
   const cleanRecords = rawRecords.filter(r=>r&&r.id&&r.teacher).sort((a,b)=>(a.id||0)-(b.id||0));
@@ -407,10 +417,11 @@ async function bootFromFirebase(){
         // Keep Firebase version if it has more data
         return r;
       });
-      // Add any local records not in Firebase
+      // Add any local records not in Firebase — but never one that was cleared.
+      // Firebase not having it is the point: it was deleted on purpose.
       const fbIds=new Set(data.map(r=>r.id));
-      state.records.filter(r=>r&&r.id&&!fbIds.has(r.id)).forEach(r=>merged.push(r));
-      state.records = merged.sort((a,b)=>(a.id||0)-(b.id||0));
+      state.records.filter(r=>r&&r.id&&!fbIds.has(r.id)&&!isStaleRecord(r)).forEach(r=>merged.push(r));
+      state.records = merged.filter(r=>!isStaleRecord(r)).sort((a,b)=>(a.id||0)-(b.id||0));
       lsSet('ewj-records', state.records);
       mergeFeedbackIntoRecords();
       if(state.tab==='log'||state.tab==='dashboard') renderAll();
@@ -492,7 +503,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v9.5</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v9.6</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
