@@ -407,8 +407,20 @@ async function callAI(system,userMsg,retries){
   const apiKey=getApiKey();
   if(!apiKey){lastAIError='No API key set';console.warn(lastAIError);return null;}
   try{
-    const res=await fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1200,system,messages:[{role:'user',content:userMsg}]})});
+    // A hanging request used to freeze this whole tab on its spinner with nothing
+    // on screen to say why. Give up after 45 seconds and report it instead.
+    const res=await Promise.race([
+      fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01'},
+        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1200,system,messages:[{role:'user',content:userMsg}]})}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('no reply from the AI proxy after 45 seconds')),45000))
+    ]);
+    if(!res.ok && res.status!==200){
+      let detail='';
+      try{const j=await res.json();detail=(j.error&&j.error.message)||'';}catch(e){}
+      lastAIError='proxy returned HTTP '+res.status+(detail?' — '+detail:'');
+      console.error('AI error:',lastAIError);
+      return null;
+    }
     const data=await res.json();
     if(data.error){
       const msg=data.error.message||JSON.stringify(data.error);
@@ -1018,9 +1030,11 @@ function renderWeeklyAgenda(ag, weekRecs){
   const nCom=(weekRecs||[]).filter(r=>r.comment&&r.comment.trim()).length;
 
   if(!ag){
-    card.innerHTML='<p style="font-size:13px;color:#888">'
-      +(nRec?'No lesson comments this week yet, so there is nothing to build an agenda from.'
-            :'No registers this week yet.')+'</p>';
+    let why;
+    if(!nRec) why='No registers this week yet.';
+    else if(!nCom) why='There are '+nRec+' classes this week but none has a lesson comment, so there is nothing to build an agenda from.';
+    else why='Could not build the agenda'+(lastAIError?': '+lastAIError:'.')+' Press Regenerate to try again.';
+    card.innerHTML='<p style="font-size:13px;color:'+(nCom&&nRec?'#A32D2D':'#888')+'">'+why+'</p>';
     return;
   }
 
