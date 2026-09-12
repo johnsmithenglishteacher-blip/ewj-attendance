@@ -129,6 +129,14 @@ hr.div{border:none;border-top:1px solid #f0efea;margin:.85rem 0}
 .team-flag.positive{background:#EAF3DE;border-left:3px solid #3B6D11}
 .team-flag.info{background:#E6F1FB;border-left:3px solid #185FA5}
 .team-flag-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.ag-step{display:flex;gap:.7rem;padding:.55rem 0;border-bottom:1px solid #f2f1ec}
+.ag-step:last-child{border-bottom:none}
+.ag-min{flex:0 0 44px;font-size:11px;font-weight:700;color:#185FA5;padding-top:2px}
+.ag-body{flex:1;font-size:12.5px;line-height:1.6}
+.ag-h{font-weight:700;font-size:12px;margin-bottom:2px}
+.ag-li{margin:2px 0 2px 0}
+.ag-who{font-weight:600}
+.ag-none{color:#aaa;font-style:italic}
 .team-flag.alert .team-flag-lbl{color:#854F0B}
 .team-flag.positive .team-flag-lbl{color:#3B6D11}
 .team-flag.info .team-flag-lbl{color:#185FA5}
@@ -265,6 +273,11 @@ input[type=date]{border:1px solid #ddd;border-radius:7px;padding:5px 9px;font-si
       <div class="pill" id="coachTeacherCount">– teachers</div>
       <button class="pill" style="border:none;cursor:pointer" onclick="refreshCoaching()"><i class="ti ti-refresh"></i> Regenerate</button>
     </div>
+  </div>
+
+  <div class="slbl">Weekly meeting agenda — 10 minutes with the team</div>
+  <div class="card" id="weeklyAgendaCard">
+    <p style="font-size:13px;color:#888">Loads with the coaching tab. Built from this week's lesson comments.</p>
   </div>
 
   <div class="slbl">Individual coaching cards — click to expand</div>
@@ -970,6 +983,105 @@ async function genHeadTeacherItems(weekRecs){
   return callAI(system, userMsg);
 }
 
+// ── Weekly meeting agenda ──────────────────────────────────────────────────
+// One AI call per week, cached. Everything it says has to come from the week's
+// real comments; the attendance line is counted from the data, not generated.
+async function genWeeklyAgenda(weekRecs){
+  const withComments=weekRecs.filter(r=>r.comment&&r.comment.trim());
+  if(!withComments.length)return null;
+  const block=withComments.slice(0,40).map(r=>
+    `${r.teacher} · ${r.course||r.group||r.className||''} (${r.date}): "${r.comment}"`).join('\n');
+  const system='You are John, founder and head teacher of English with John, a Cambridge exam centre in Catalonia. '
+    +'Write the agenda for a SHORT weekly team meeting — ten minutes, standing up, six or seven teachers. '
+    +'Base every line strictly on the lesson comments given. Never invent a student, teacher, class or incident that is not in them. '
+    +'Name real people and classes so each point is concrete and can be said out loud as written. '
+    +'Be brief: this is a spoken agenda, not a report. Leave an array empty rather than padding it. '
+    +'Respond ONLY with JSON (no markdown) with keys: '
+    +'"wins" (array of 0-3 {who, what} — name a teacher and the specific thing worth recognising in front of the others), '
+    +'"focus" (object {title, why, how} OR null — the single teaching point most worth the team working on next week, drawn from a pattern across several comments; "how" is one practical instruction), '
+    +'"followUps" (array of 0-4 {who, action} — a specific short ask of a named teacher), '
+    +'"watch" (array of 0-3 {who, what} — a named student or group to keep an eye on, and why, from the comments), '
+    +'"close" (string — one sentence to end the meeting on).';
+  return callAI(system,`This week's lesson comments:\n${block}`);
+}
+
+function renderWeeklyAgenda(ag, weekRecs){
+  const card=document.getElementById('weeklyAgendaCard');
+  if(!card)return;
+
+  // Attendance is counted here rather than asked for — numbers should not be generated.
+  const abs={};
+  (weekRecs||[]).forEach(r=>(r.students||[]).filter(s=>s.status==='absent')
+    .forEach(s=>{abs[s.name]=(abs[s.name]||0)+1;}));
+  const chase=Object.entries(abs).filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]);
+  const nRec=(weekRecs||[]).length;
+  const nCom=(weekRecs||[]).filter(r=>r.comment&&r.comment.trim()).length;
+
+  if(!ag){
+    card.innerHTML='<p style="font-size:13px;color:#888">'
+      +(nRec?'No lesson comments this week yet, so there is nothing to build an agenda from.'
+            :'No registers this week yet.')+'</p>';
+    return;
+  }
+
+  const esc=t=>String(t==null?'':t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const li=(a)=>a&&a.length?a.map(x=>`<div class="ag-li">&middot; <span class="ag-who">${esc(x.who)}</span> — ${esc(x.what||x.action)}</div>`).join('')
+                           :'<div class="ag-none">nothing this week</div>';
+  let h='';
+  h+=`<div class="ag-step"><div class="ag-min">0–2′</div><div class="ag-body">`
+    +`<div class="ag-h">Recognition</div>${li(ag.wins)}</div></div>`;
+  h+=`<div class="ag-step"><div class="ag-min">2–5′</div><div class="ag-body"><div class="ag-h">This week's focus</div>`
+    +(ag.focus?`<div class="ag-li"><span class="ag-who">${esc(ag.focus.title)}</span> — ${esc(ag.focus.why)}</div>`
+      +`<div class="ag-li" style="color:#185FA5">Try: ${esc(ag.focus.how)}</div>`
+      :'<div class="ag-none">no clear shared pattern this week</div>')+`</div></div>`;
+  h+=`<div class="ag-step"><div class="ag-min">5–7′</div><div class="ag-body">`
+    +`<div class="ag-h">Follow-ups</div>${li(ag.followUps)}</div></div>`;
+  h+=`<div class="ag-step"><div class="ag-min">7–9′</div><div class="ag-body"><div class="ag-h">Students to watch</div>`
+    +li(ag.watch)
+    +(chase.length?`<div class="ag-li" style="color:#854F0B;margin-top:4px">Absent twice or more: `
+        +chase.map(([n,c])=>esc(n)+' ('+c+')').join(', ')+`</div>`:'')
+    +`</div></div>`;
+  h+=`<div class="ag-step"><div class="ag-min">9–10′</div><div class="ag-body"><div class="ag-h">Close</div>`
+    +`<div class="ag-li">${esc(ag.close||'Thanks — good week.')}</div></div></div>`;
+  h+=`<div style="display:flex;align-items:center;gap:10px;margin-top:.7rem;flex-wrap:wrap">`
+    +`<button class="icon-btn" onclick="copyAgenda()"><i class="ti ti-copy"></i> Copy agenda</button>`
+    +`<span style="font-size:11px;color:#aaa">From ${nCom} lesson comment${nCom!==1?'s':''} across ${nRec} class${nRec!==1?'es':''} this week</span></div>`;
+  card.innerHTML=h;
+  card.dataset.plain=agendaAsText(ag,chase);
+}
+
+function agendaAsText(ag,chase){
+  const L=[];
+  L.push('WEEKLY MEETING — '+(coachWeekRange?fmtShort(coachWeekRange.mon)+'–'+fmtShort(coachWeekRange.sun):''));
+  L.push('');
+  L.push('RECOGNITION');
+  (ag.wins||[]).forEach(x=>L.push('  - '+x.who+' — '+x.what));
+  if(!(ag.wins||[]).length)L.push('  (none)');
+  L.push('');
+  L.push('FOCUS');
+  if(ag.focus){L.push('  '+ag.focus.title+' — '+ag.focus.why);L.push('  Try: '+ag.focus.how);}
+  else L.push('  (no clear pattern)');
+  L.push('');
+  L.push('FOLLOW-UPS');
+  (ag.followUps||[]).forEach(x=>L.push('  - '+x.who+' — '+x.action));
+  if(!(ag.followUps||[]).length)L.push('  (none)');
+  L.push('');
+  L.push('STUDENTS TO WATCH');
+  (ag.watch||[]).forEach(x=>L.push('  - '+x.who+' — '+x.what));
+  if(chase&&chase.length)L.push('  Absent 2+ times: '+chase.map(([n,c])=>n+' ('+c+')').join(', '));
+  L.push('');
+  L.push('CLOSE: '+(ag.close||''));
+  return L.join('\n');
+}
+
+function copyAgenda(){
+  const card=document.getElementById('weeklyAgendaCard');
+  const t=card&&card.dataset?card.dataset.plain:'';
+  if(!t){alert('Nothing to copy yet.');return;}
+  navigator.clipboard.writeText(t).then(()=>alert('Agenda copied — paste it into WhatsApp or your notes.'),
+    ()=>alert('Could not copy automatically. Select the text and copy it by hand.'));
+}
+
 function renderHeadTeacherItems(items){
   const card = document.getElementById('headTeacherItemsCard');
   if (!card) return;
@@ -1013,12 +1125,31 @@ async function buildCoachGrid(forceRegenerate) {
     grid.innerHTML = '<p style="font-size:13px;color:#888;padding:1rem">No Claude API key saved in this browser yet. Paste one into the box at the top right and press <b>Save key</b> \u2014 you can get a key from console.anthropic.com. The coaching notes then generate from this week\u2019s real lesson comments.</p>';
     const card = document.getElementById('headTeacherItemsCard');
     if (card) card.innerHTML = '<p style="font-size:13px;color:#888">Add your API key to generate discussion items.</p>';
+    const ac = document.getElementById('weeklyAgendaCard');
+    if (ac) ac.innerHTML = '<p style="font-size:13px;color:#888">Save your Claude API key at the top right to build this week\u2019s meeting agenda.</p>';
     return;
   }
 
   grid.innerHTML = '<p style="font-size:13px;color:#888;padding:1rem"><i class="ti ti-loader"></i> Generating coaching notes from this week\'s lesson comments…</p>';
   const htiCard = document.getElementById('headTeacherItemsCard');
   if (htiCard) htiCard.innerHTML = '<p style="font-size:13px;color:#888"><i class="ti ti-loader"></i> Generating…</p>';
+
+  // The agenda goes first — it is the thing needed before the meeting, and it
+  // should not sit behind a minute of per-teacher generation.
+  const agCacheKey = 'agenda_'+dateKey(wrange.mon);
+  let agendaDone;
+  if (!forceRegenerate && aiCache[agCacheKey] !== undefined) {
+    renderWeeklyAgenda(aiCache[agCacheKey], weekRecs);
+    agendaDone = Promise.resolve();
+  } else {
+    const ac = document.getElementById('weeklyAgendaCard');
+    if (ac) ac.innerHTML = '<p style="font-size:13px;color:#888"><i class="ti ti-loader"></i> Building this week\u2019s agenda\u2026</p>';
+    agendaDone = genWeeklyAgenda(weekRecs).then(ag => {
+      aiCache[agCacheKey] = ag;
+      renderWeeklyAgenda(ag, weekRecs);
+    }).catch(()=>{ renderWeeklyAgenda(null, weekRecs); });
+  }
+  await agendaDone;
 
   const cacheKey = 'coach_'+dateKey(wrange.mon);
   const htiCacheKey = 'hti_'+dateKey(wrange.mon);
@@ -1030,12 +1161,13 @@ async function buildCoachGrid(forceRegenerate) {
     const teachersWithClasses = TEACHERS.filter(t => weekRecs.some(r => r.teacher === t));
     coachingData = [];
     for (let i = 0; i < teachersWithClasses.length; i++) {
+      // Space the calls out — the proxy rate-limits, and the agenda just used a slot.
+      await new Promise(r => setTimeout(r, 13000));
       const t = teachersWithClasses[i];
       grid.innerHTML = `<p style="font-size:13px;color:#888;padding:1rem"><i class="ti ti-loader"></i> Generating coaching notes… (${i+1}/${teachersWithClasses.length}: ${t})</p>`;
       const report = await genCoachingReport(t, weekRecs);
       if (report) coachingData.push(report);
       else anyAIFailure = true;
-      if (i < teachersWithClasses.length - 1) await new Promise(r => setTimeout(r, 13000));
     }
     aiCache[cacheKey] = coachingData;
   }
