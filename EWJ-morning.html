@@ -1123,7 +1123,25 @@ function renderHeadTeacherItems(items){
   card.innerHTML = h || '<p style="font-size:13px;color:#888">No specific items flagged from this week\'s comments.</p>';
 }
 
-async function buildCoachGrid(forceRegenerate) {
+// Asked for explicitly, because it is slow: one call per teacher, spaced for the rate limit.
+function loadCoachingDetail(){
+  const grid=document.getElementById('coachGrid');
+  if(grid)grid.innerHTML='<p style="font-size:13px;color:#888;padding:1rem"><i class="ti ti-loader"></i> Writing the individual notes\u2026 this takes a minute or two, you can leave the tab open.</p>';
+  buildCoachGrid(false, true);
+}
+function loadTeamItems(){
+  const card=document.getElementById('headTeacherItemsCard');
+  if(card)card.innerHTML='<p style="font-size:13px;color:#888"><i class="ti ti-loader"></i> Generating\u2026</p>';
+  const wr=coachWeekRange;
+  if(!wr){buildCoachGrid(false,true);return;}
+  const recs=getWeekRecs(wr.mon,wr.sun);
+  const k='hti_'+dateKey(wr.mon);
+  if(aiCache[k]!==undefined){renderHeadTeacherItems(aiCache[k]);return;}
+  genHeadTeacherItems(recs).then(items=>{aiCache[k]=items;renderHeadTeacherItems(items);})
+    .catch(()=>renderHeadTeacherItems(null));
+}
+
+async function buildCoachGrid(forceRegenerate, deepMode) {
   const grid = document.getElementById('coachGrid');
   const banner = document.getElementById('coachBanner');
   const d = new Date(reportDate ? reportDate+'T12:00:00' : Date.now());
@@ -1144,9 +1162,7 @@ async function buildCoachGrid(forceRegenerate) {
     return;
   }
 
-  grid.innerHTML = '<p style="font-size:13px;color:#888;padding:1rem"><i class="ti ti-loader"></i> Generating coaching notes from this week\'s lesson comments…</p>';
   const htiCard = document.getElementById('headTeacherItemsCard');
-  if (htiCard) htiCard.innerHTML = '<p style="font-size:13px;color:#888"><i class="ti ti-loader"></i> Generating…</p>';
 
   // The agenda goes first — it is the thing needed before the meeting, and it
   // should not sit behind a minute of per-teacher generation.
@@ -1168,6 +1184,25 @@ async function buildCoachGrid(forceRegenerate) {
   const cacheKey = 'coach_'+dateKey(wrange.mon);
   const htiCacheKey = 'hti_'+dateKey(wrange.mon);
   let anyAIFailure = false;
+
+  // Everything below is one AI call per teacher, spaced 13 seconds apart for the
+  // rate limit. That is over a minute for a full team, so it is not run on open —
+  // the agenda is what a ten-minute meeting needs. Ask for the rest explicitly.
+  if (!deepMode) {
+    const nT = TEACHERS.filter(t => weekRecs.some(r => r.teacher === t)).length;
+    if (aiCache[cacheKey]) {
+      coachingData = aiCache[cacheKey];
+    } else {
+      grid.innerHTML = '<div style="padding:1rem;font-size:13px;color:#555;line-height:1.6">'
+        + (nT ? 'A note per teacher takes about ' + Math.max(1,Math.round(nT*13/60)) + ' minute'+(nT*13>=90?'s':'')+' to write ('+nT+' teacher'+(nT!==1?'s':'')+' this week), so it is not done automatically.'
+              : 'No teachers have classes with comments this week.')
+        + (nT ? '<br><button class="icon-btn" style="margin-top:.6rem" onclick="loadCoachingDetail()"><i class="ti ti-users"></i> Write the individual notes</button>' : '')
+        + '</div>';
+      if (htiCard) htiCard.innerHTML = '<div style="font-size:13px;color:#555">'
+        + '<button class="icon-btn" onclick="loadTeamItems()"><i class="ti ti-list-check"></i> Generate team discussion items</button></div>';
+      return;
+    }
+  }
 
   if (!forceRegenerate && aiCache[cacheKey]) {
     coachingData = aiCache[cacheKey];
