@@ -187,7 +187,8 @@ async function generateLessonFeedback(r){
     `You are John's head teacher assistant at English with John academy in Catalonia. Write structured pedagogical feedback on a lesson comment. Respond ONLY with a JSON object (no markdown, no preamble) with keys: "style" (the analysis style used), "analysis" (2-3 sentence pedagogical observation, warm and specific), "followup" (one concrete follow-up starting with "Could you..." or "Next lesson, please..."), "alert" (null OR {type:"high"|"positive", text: one sentence for head teacher}).`,
     `Teacher: ${r.teacher}\nClass: ${r.group||r.className||''}\nRequested style: ${style}\nLesson comment: "${r.comment}"`
   );
-  return ai||{style,analysis:'Unable to generate analysis.',followup:null,alert:null};
+  // Show the reason rather than a dead end — the cause was already known here and thrown away.
+  return ai||{style,analysis:(lastAIError||'Unable to generate analysis.'),followup:null,alert:null};
 }
 
 async function generateDailyAlert(dayRecs){

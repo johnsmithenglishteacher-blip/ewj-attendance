@@ -171,10 +171,13 @@ input[type=date]{border:1px solid #ddd;border-radius:7px;padding:5px 9px;font-si
       <div style="font-size:12px;color:#888;margin-top:1px">Morning dashboard</div>
     </div>
   </div>
-  <div style="display:flex;align-items:center;gap:14px">
-    <div style="display:flex;align-items:center;gap:6px">
-      <input type="password" id="apiKeyInput" placeholder="Claude API key" style="font-size:11px;padding:5px 8px;border:1px solid #e0dfd8;border-radius:6px;width:160px;font-family:monospace;color:#555">
-      <button class="icon-btn2" style="padding:5px 9px;font-size:11px" onclick="saveApiKey()" title="Save key for AI features"><i class="ti ti-key"></i></button>
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:flex-end">
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <input type="password" id="apiKeyInput" placeholder="Paste Claude API key" autocomplete="off"
+        style="font-size:11px;padding:6px 9px;border:1px solid #e0dfd8;border-radius:6px;width:180px;font-family:monospace;color:#555">
+      <button style="padding:6px 12px;font-size:11px;font-weight:700;font-family:inherit;border:none;border-radius:6px;background:#185FA5;color:#fff;cursor:pointer"
+        onclick="saveApiKey()" title="Save key for AI features">Save key</button>
+      <span id="apiKeyState" style="font-size:11px;color:#aaa;white-space:nowrap"></span>
     </div>
     <div style="text-align:right">
       <div style="font-size:13px;color:#555" id="hDate">—</div>
@@ -347,17 +350,34 @@ const barColor=r=>r>=85?'#3B6D11':r>=70?'#854F0B':'#A32D2D';
 /* ── AI ── */
 const PROXY_URL='https://ewj-proxy.johnsmithenglishteacher.workers.dev';
 
-function saveApiKey(){
+function showKeyState(){
+  const el=document.getElementById('apiKeyState');
+  if(!el)return;
+  const has=!!getApiKey();
+  el.textContent=has?'\u2713 key saved':'no key yet';
+  el.style.color=has?'#2E7D32':'#A32D2D';
+}
+function saveApiKey(quiet){
   const v=document.getElementById('apiKeyInput').value.trim();
-  if(!v){alert('Paste your Claude API key first.');return;}
+  if(!v){ if(!quiet)alert('Paste your Claude API key first.'); return; }
   try{localStorage.setItem('ewj_api_key',v);}catch(e){}
-  alert('API key saved for this browser. AI features are now enabled.');
+  showKeyState();
+  // Re-draw the coaching tab straight away rather than making you find Regenerate.
+  try{ if(typeof buildCoachGrid==='function') buildCoachGrid(); }catch(e){}
+  if(!quiet)alert('API key saved in this browser. The coaching tab will now generate.');
 }
 function loadApiKey(){
   try{
     const v=localStorage.getItem('ewj_api_key');
     if(v){document.getElementById('apiKeyInput').value=v;}
   }catch(e){}
+  showKeyState();
+  const inp=document.getElementById('apiKeyInput');
+  if(inp){
+    // Pressing Enter or clicking away saves too — an icon button alone was too easy to miss.
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveApiKey();}});
+    inp.addEventListener('blur',()=>saveApiKey(true));
+  }
 }
 function getApiKey(){
   const v=document.getElementById('apiKeyInput').value.trim();
@@ -990,7 +1010,7 @@ async function buildCoachGrid(forceRegenerate) {
   }
 
   if (!getApiKey()) {
-    grid.innerHTML = '<p style="font-size:13px;color:#888;padding:1rem">Add your Claude API key at the top of the page to generate this week\'s coaching notes from real lesson comments.</p>';
+    grid.innerHTML = '<p style="font-size:13px;color:#888;padding:1rem">No Claude API key saved in this browser yet. Paste one into the box at the top right and press <b>Save key</b> \u2014 you can get a key from console.anthropic.com. The coaching notes then generate from this week\u2019s real lesson comments.</p>';
     const card = document.getElementById('headTeacherItemsCard');
     if (card) card.innerHTML = '<p style="font-size:13px;color:#888">Add your API key to generate discussion items.</p>';
     return;
