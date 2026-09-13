@@ -400,7 +400,7 @@ function getApiKey(){
 
 let lastAIError = null;
 
-async function callAI(system,userMsg,retries){
+async function callAI(system,userMsg,retries,maxTokens){
   retries = retries===undefined ? 2 : retries;
   const key=btoa(encodeURIComponent(userMsg)).slice(0,48);
   if(aiCache[key])return aiCache[key];
@@ -411,8 +411,8 @@ async function callAI(system,userMsg,retries){
     // on screen to say why. Give up after 45 seconds and report it instead.
     const res=await Promise.race([
       fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01'},
-        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1200,system,messages:[{role:'user',content:userMsg}]})}),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('no reply from the AI proxy after 45 seconds')),45000))
+        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens||1200,system,messages:[{role:'user',content:userMsg}]})}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('no reply from the AI proxy after 90 seconds')),90000))
     ]);
     if(!res.ok && res.status!==200){
       let detail='';
@@ -428,7 +428,7 @@ async function callAI(system,userMsg,retries){
       console.error('AI error:',msg);
       if(/rate.?limit/i.test(msg) && retries>0){
         await new Promise(r=>setTimeout(r,15000));
-        return callAI(system,userMsg,retries-1);
+        return callAI(system,userMsg,retries-1,maxTokens);
       }
       return null;
     }
@@ -1001,7 +1001,8 @@ async function genHeadTeacherItems(weekRecs){
 async function genWeeklyAgenda(weekRecs){
   const withComments=weekRecs.filter(r=>r.comment&&r.comment.trim());
   if(!withComments.length)return null;
-  const block=withComments.slice(0,40).map(r=>
+  // Twenty comments is plenty for a ten-minute meeting and keeps the call quick.
+  const block=withComments.slice(0,20).map(r=>
     `${r.teacher} · ${r.course||r.group||r.className||''} (${r.date}): "${r.comment}"`).join('\n');
   const system='You are John, founder and head teacher of English with John, a Cambridge exam centre in Catalonia. '
     +'Write the agenda for a SHORT weekly team meeting — ten minutes, standing up, six or seven teachers. '
@@ -1014,7 +1015,7 @@ async function genWeeklyAgenda(weekRecs){
     +'"followUps" (array of 0-4 {who, action} — a specific short ask of a named teacher), '
     +'"watch" (array of 0-3 {who, what} — a named student or group to keep an eye on, and why, from the comments), '
     +'"close" (string — one sentence to end the meeting on).';
-  return callAI(system,`This week's lesson comments:\n${block}`);
+  return callAI(system,`This week's lesson comments:\n${block}`,2,700);
 }
 
 function renderWeeklyAgenda(ag, weekRecs){
@@ -1173,7 +1174,7 @@ async function buildCoachGrid(forceRegenerate, deepMode) {
     agendaDone = Promise.resolve();
   } else {
     const ac = document.getElementById('weeklyAgendaCard');
-    if (ac) ac.innerHTML = '<p style="font-size:13px;color:#888"><i class="ti ti-loader"></i> Building this week\u2019s agenda\u2026</p>';
+    if (ac) ac.innerHTML = '<p style="font-size:13px;color:#888"><i class="ti ti-loader"></i> Building this week\u2019s agenda\u2026 this can take up to a minute</p>';
     agendaDone = genWeeklyAgenda(weekRecs).then(ag => {
       aiCache[agCacheKey] = ag;
       renderWeeklyAgenda(ag, weekRecs);
