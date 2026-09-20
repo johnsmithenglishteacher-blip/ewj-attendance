@@ -134,24 +134,41 @@ async function loadRecords() {
   }
   log('Loading from ' + FB_URL() + ' …');
   try {
-    // Say which address timed out, so a hang points at the cause instead of hiding it.
-    const withTimeout = (url) => Promise.race([
+    // The two addresses are fetched SEPARATELY and in order. They used to go out
+    // together in one Promise.all, which meant either one stalling froze the whole
+    // page — and because both timers started at the same moment, the error always
+    // named records.json even when feedback.json was the one being blocked.
+    const get = (url, seconds) => Promise.race([
       fetch(url, {cache:'no-store'}),
-      new Promise((_, rej) => setTimeout(() => rej(new Error(
-        'no reply from ' + url + ' after 30 seconds.\n\n'
-        + 'The database itself is fine if the other tools work. This is usually the browser: try a Private window, '
-        + 'or disable ad-blocking / privacy extensions for this page, then load again.')), 30000))
+      new Promise((_, rej) => setTimeout(
+        () => rej(new Error('no reply after ' + seconds + ' seconds')), seconds * 1000))
     ]);
-    const [rRes, fRes] = await Promise.all([
-      withTimeout(FB_URL() + '/records.json'),
-      withTimeout(FB_URL() + '/feedback.json')
-    ]);
+
+    // The registers are essential — without them there is nothing to show.
+    let rRes;
+    try { rRes = await get(FB_URL() + '/records.json', 30); }
+    catch(e) {
+      throw new Error('Could not read the registers — ' + e.message + '.\n\n'
+        + 'Address: ' + FB_URL() + '/records.json\n\n'
+        + 'If the Attendance Register itself works on this computer, the database is fine and '
+        + 'something in this browser is stopping this page. An ad-blocking or privacy extension '
+        + 'is the usual cause — try a Private window.');
+    }
     if (rRes.status === 401 || rRes.status === 403) {
       throw new Error('Firebase refused the request (HTTP ' + rRes.status + '). The database rules are probably still locked — open Firebase → Realtime Database → Rules and set .read and .write back to true.');
     }
     if (!rRes.ok) throw new Error('Firebase returned HTTP ' + rRes.status);
     const rData = await rRes.json();
-    const fData = fRes.ok ? await fRes.json() : null;
+
+    // Saved feedback is a convenience, not a requirement: each record also carries
+    // its own copy. If this address is blocked or slow, carry on without it.
+    let fData = null;
+    try {
+      const fRes = await get(FB_URL() + '/feedback.json', 20);
+      if (fRes.ok) fData = await fRes.json();
+    } catch(e) {
+      console.warn('feedback.json unavailable:', e.message);
+    }
 
     const allRecs = rData ? (Array.isArray(rData) ? rData : Object.values(rData)).filter(r => r && r.teacher && !r.isPlanning) : [];
     records = allRecs.filter(r => r.comment && r.comment.trim().length > 10);
