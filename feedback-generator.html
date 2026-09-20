@@ -311,25 +311,39 @@ async function callClaude(r) {
 
   const prompt = 'You are the director of an English language academy in Catalonia, Spain (English with John). You are reading a teacher\'s lesson comment and writing brief, warm, professional feedback for them.\n\n' + context + '\n\n' + teachingKnowledge + '\n\nWrite feedback in EXACTLY this three-part format:\n\nPART 1 — Opening paragraph: Address the teacher by first name only (e.g. "Mireia,") followed by a comma. Acknowledge what they did or reported in their comment. Warm and positive tone. 2-3 sentences. Do NOT mention the course name, time slot, or day.\n\nPART 2 — "What I particularly like" paragraph: Start with exactly the words "What I particularly like is" and then highlight one specific thing from their comment that shows good practice, awareness, or initiative. 1-2 sentences.\n\nPART 3 — Follow-up line: Start with exactly "🔄 Follow-up for next lesson:" and give one concrete, specific action point or question for the teacher to address in their next class. Directly related to their comment. Where genuinely relevant, this can draw on the professional teaching reference above, expressed in plain, practical language — never naming a book, author, or framework.\n\nRules:\n- No bullet points anywhere\n- No headers or labels\n- Just the three paragraphs, separated by a blank line\n- In English\n- Never mention book titles, author names, or framework names (e.g. TKT, CEFR) in the output\n- Write only the feedback text, nothing else.';
 
-  const response = await fetch(PROXY_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': API_KEY(),
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 300,
-      messages: [{ role: 'user', content: prompt }]
-    })
-  });
+  // A call with no ceiling can hang forever, and the batch loop waits on it —
+  // which is how a whole run freezes on "Generating 1/20" showing nothing.
+  // 60 seconds is far longer than a normal reply (2-5s) but it always ends.
+  const response = await Promise.race([
+    fetch(PROXY_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': API_KEY(),
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 300,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    }),
+    new Promise((_, rej) => setTimeout(
+      () => rej(new Error('no reply from the AI proxy after 60 seconds')), 60000))
+  ]);
 
   if (!response.ok) {
-    const err = await response.json();
-    throw new Error(err.error?.message || 'API error ' + response.status);
+    // The proxy does not always answer in JSON — a gateway error is HTML, and
+    // calling .json() on that throws and hides the real status.
+    let detail = '';
+    try { const err = await response.json(); detail = err.error?.message || ''; }
+    catch(e) { try { detail = (await response.text()).slice(0,120); } catch(e2) {} }
+    if (response.status === 401) detail = 'the API key was rejected — check it is pasted in full, with no spaces';
+    if (response.status === 429) detail = detail || 'rate limit — it will retry';
+    throw new Error('HTTP ' + response.status + (detail ? ' — ' + detail : ''));
   }
   const data = await response.json();
+  if (!data || !data.content || !data.content[0]) throw new Error('the proxy replied, but with no text in it');
   return data.content[0].text.trim();
 }
 
