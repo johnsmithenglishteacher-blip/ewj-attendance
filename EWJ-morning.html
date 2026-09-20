@@ -400,6 +400,53 @@ function getApiKey(){
 
 let lastAIError = null;
 
+// The AI answers in JSON. If it hits its token ceiling the reply stops mid-word,
+// leaving an unterminated string — and a plain JSON.parse throws away everything
+// it had already written. This closes whatever was left open and keeps the rest,
+// so a slightly-too-long answer still gives a usable agenda.
+function parseLooseJSON(raw){
+  const txt=String(raw||'').replace(/```json|```/g,'').trim();
+  if(!txt) return null;
+  try{ return JSON.parse(txt); }catch(e){}
+
+  let inStr=false, esc=false;
+  const stack=[];
+  for(let i=0;i<txt.length;i++){
+    const c=txt[i];
+    if(esc){ esc=false; continue; }
+    if(c==='\\'){ if(inStr) esc=true; continue; }
+    if(c==='"'){ inStr=!inStr; continue; }
+    if(inStr) continue;
+    if(c==='{'||c==='[') stack.push(c==='{'?'}':']');
+    else if(c==='}'||c===']') stack.pop();
+  }
+  let fixed=txt;
+  if(inStr) fixed+='"';                       // close the sentence it was cut off in
+  fixed=fixed.replace(/,\s*$/,'');            // drop a dangling comma
+  while(stack.length) fixed+=stack.pop();     // close every open object and array
+  try{ return JSON.parse(fixed); }catch(e){}
+
+  // Last resort: keep only the entries that are complete.
+  const cut=fixed.lastIndexOf('",');
+  if(cut>0){
+    let t=fixed.slice(0,cut+1);
+    const s2=[];
+    let is=false, es=false;
+    for(let i=0;i<t.length;i++){
+      const c=t[i];
+      if(es){es=false;continue;}
+      if(c==='\\'){ if(is) es=true; continue; }
+      if(c==='"'){ is=!is; continue; }
+      if(is) continue;
+      if(c==='{'||c==='[') s2.push(c==='{'?'}':']');
+      else if(c==='}'||c===']') s2.pop();
+    }
+    while(s2.length) t+=s2.pop();
+    try{ return JSON.parse(t); }catch(e){}
+  }
+  return null;
+}
+
 async function callAI(system,userMsg,retries,maxTokens){
   retries = retries===undefined ? 2 : retries;
   const key=btoa(encodeURIComponent(userMsg)).slice(0,48);
@@ -433,7 +480,14 @@ async function callAI(system,userMsg,retries,maxTokens){
       return null;
     }
     const raw=data.content?.[0]?.text||'{}';
-    const p=JSON.parse(raw.replace(/```json|```/g,'').trim());
+    const p=parseLooseJSON(raw);
+    if(p===null){
+      lastAIError = data.stop_reason==='max_tokens'
+        ? 'the AI ran out of room and its answer was cut off. Press Regenerate — it is usually shorter the second time.'
+        : 'the AI replied with something this page could not read';
+      console.error('AI parse failed. stop_reason=',data.stop_reason,'raw:',raw);
+      return null;
+    }
     aiCache[key]=p;return p;
   }catch(e){lastAIError=e.message||String(e);console.error('AI call failed:',e);return null;}
 }
@@ -1015,7 +1069,9 @@ async function genWeeklyAgenda(weekRecs){
     +'"followUps" (array of 0-4 {who, action} — a specific short ask of a named teacher), '
     +'"watch" (array of 0-3 {who, what} — a named student or group to keep an eye on, and why, from the comments), '
     +'"close" (string — one sentence to end the meeting on).';
-  return callAI(system,`This week's lesson comments:\n${block}`,2,700);
+  // 700 was too tight — the answer was being cut off mid-sentence, which left
+  // broken JSON and no agenda at all. 1800 leaves comfortable room.
+  return callAI(system,`This week's lesson comments:\n${block}`,2,1800);
 }
 
 function renderWeeklyAgenda(ag, weekRecs){
