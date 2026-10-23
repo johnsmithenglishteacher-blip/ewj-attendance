@@ -299,12 +299,53 @@ async function generateOne(id) {
   }
 }
 
+// ── The thread so far ─────────────────────────────────────────────────────
+// Feedback used to be written from a single register, with no idea what had
+// been said to this teacher before — so the same follow-up could go out three
+// weeks running, and a teacher who actually did what was asked never heard so.
+// These assemble the recent history for the group, newest first.
+function recStamp(r){
+  const n = Number(r && r.id);
+  if (n) return n;
+  const p = String((r && r.date) || '').split('/');
+  return p.length === 3 ? new Date(+p[2], +p[1] - 1, +p[0]).getTime() : 0;
+}
+function feedbackFor(r){
+  const f = feedback[r.id] || feedback[String(r.id)];
+  return (f && f.adminFeedback) || r.adminFeedback || '';
+}
+function priorRecords(r){
+  const now = recStamp(r);
+  const mine = records.filter(x => x && x.id !== r.id && x.teacher === r.teacher && recStamp(x) < now)
+                      .sort((a, b) => recStamp(b) - recStamp(a));
+  // The same group first — that is where a follow-up actually lands.
+  const sameGroup = mine.filter(x => x.course === r.course).slice(0, 4);
+  if (sameGroup.length >= 2) return sameGroup;
+  return sameGroup.concat(mine.filter(x => x.course !== r.course).slice(0, 3 - sameGroup.length));
+}
+function clip(s, n){
+  s = String(s || '').trim().replace(/\s+/g, ' ');
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+function historyBlock(r){
+  const prior = priorRecords(r);
+  if (!prior.length) return '';
+  let h = '\n\nWHAT HAS GONE BEFORE WITH THIS TEACHER (most recent first — this is real history, never invent any of it):\n';
+  prior.forEach(x => {
+    const fb = feedbackFor(x);
+    h += '\n' + x.date + ' · ' + (x.course || '') + '\n'
+       + '  Their lesson comment: "' + clip(x.comment, 600) + '"\n'
+       + '  What you wrote back: ' + (fb ? '"' + clip(fb, 600) + '"' : '(nothing was sent that week)') + '\n';
+  });
+  return h;
+}
+
 async function callClaude(r) {
   const absent = (r.students || []).filter(s => s.status === 'absent' && s.flag !== 'dropped').map(s => s.name);
   const late = (r.students || []).filter(s => s.status === 'late').map(s => s.name);
   const present = (r.students || []).filter(s => s.status === 'present').map(s => s.name);
 
-  const context = 'Teacher: ' + r.teacher + '\nCourse: ' + r.course + '\nDate: ' + r.date + ' (' + r.day + ')\nStudents present: ' + present.length + (present.length ? ' (' + present.join(', ') + ')' : '') + (absent.length ? '\nAbsent: ' + absent.join(', ') : '') + (late.length ? '\nLate: ' + late.join(', ') : '') + '\n\nTeacher\'s lesson comment:\n"' + r.comment + '"';
+  const context = 'Teacher: ' + r.teacher + '\nCourse: ' + r.course + '\nDate: ' + r.date + ' (' + r.day + ')\nStudents present: ' + present.length + (present.length ? ' (' + present.join(', ') + ')' : '') + (absent.length ? '\nAbsent: ' + absent.join(', ') : '') + (late.length ? '\nLate: ' + late.join(', ') : '') + '\n\nTeacher\'s lesson comment:\n"' + r.comment + '"' + historyBlock(r);
 
   const teachingKnowledge = 'Professional teaching reference (draw on this naturally in Part 3 ONLY when genuinely relevant to the specific comment — do not force any of it in, and never cite authors, book titles, or framework names like "TKT" or "CEFR" in the output; express everything in plain, practical language as your own coaching observation):\n\n' +
     'CLASSROOM MANAGEMENT & ENGAGEMENT:\n' +
@@ -326,7 +367,18 @@ async function callClaude(r) {
     '- Primary-age routine: very young learners benefit from predictable lesson shape (same opening/closing routine each class) since it reduces anxiety and speeds transitions.\n\n' +
     'If the teacher\'s comment surfaces a genuine opportunity in one of these areas (e.g. exam technique gaps, a disengaged or distracted student, mixed-level pacing, young learners losing focus, a teenager\'s motivation), Part 3 may weave in ONE relevant idea above, expressed as your own practical suggestion — never as a citation, framework name, or reading recommendation.';
 
-  const prompt = 'You are the director of an English language academy in Catalonia, Spain (English with John). You are reading a teacher\'s lesson comment and writing brief, warm, professional feedback for them.\n\n' + context + '\n\n' + teachingKnowledge + '\n\nWrite feedback in EXACTLY this three-part format:\n\nPART 1 — Opening paragraph: Address the teacher by first name only (e.g. "Mireia,") followed by a comma. Acknowledge what they did or reported in their comment. Warm and positive tone. 2-3 sentences. Do NOT mention the course name, time slot, or day.\n\nPART 2 — "What I particularly like" paragraph: Start with exactly the words "What I particularly like is" and then highlight one specific thing from their comment that shows good practice, awareness, or initiative. 1-2 sentences.\n\nPART 3 — Follow-up line: Start with exactly "🔄 Follow-up for next lesson:" and give one concrete, specific action point or question for the teacher to address in their next class. Directly related to their comment. Where genuinely relevant, this can draw on the professional teaching reference above, expressed in plain, practical language — never naming a book, author, or framework.\n\nRules:\n- No bullet points anywhere\n- No headers or labels\n- Just the three paragraphs, separated by a blank line\n- In English\n- Never mention book titles, author names, or framework names (e.g. TKT, CEFR) in the output\n- Write only the feedback text, nothing else.';
+  // Continuity instructions are only worth sending when there is real history
+  // to work from — otherwise they invite the AI to imagine a past that is not there.
+  const continuity = historyBlock(r)
+    ? '\n\nUSING THE HISTORY ABOVE:\n'
+      + '- You have written to this teacher before. Write as the same person continuing the same conversation, not as a stranger meeting them for the first time.\n'
+      + '- If a follow-up you asked for previously appears in this week\'s comment as something they actually did, say so plainly and warmly in PART 1 or PART 2 — name what they did. This matters more than any new observation.\n'
+      + '- Never repeat a follow-up they have already been given word for word. If the same issue is genuinely still there after you raised it, say so honestly and kindly, and go a step further: a different angle, a smaller concrete step, or an offer of help — not the same ask again.\n'
+      + '- If you can see real progress across the weeks, name it specifically.\n'
+      + '- Only refer to things that actually appear above. Never invent a previous conversation, a promise, or a result. If the history does not support a claim of continuity, simply write about this week.\n'
+    : '';
+
+  const prompt = 'You are the director of an English language academy in Catalonia, Spain (English with John). You are reading a teacher\'s lesson comment and writing brief, warm, professional feedback for them.\n\n' + context + '\n\n' + teachingKnowledge + continuity + '\n\nWrite feedback in EXACTLY this three-part format:\n\nPART 1 — Opening paragraph: Address the teacher by first name only (e.g. "Mireia,") followed by a comma. Acknowledge what they did or reported in their comment. Warm and positive tone. 2-3 sentences. Do NOT mention the course name, time slot, or day.\n\nPART 2 — "What I particularly like" paragraph: Start with exactly the words "What I particularly like is" and then highlight one specific thing from their comment that shows good practice, awareness, or initiative. 1-2 sentences.\n\nPART 3 — Follow-up line: Start with exactly "🔄 Follow-up for next lesson:" and give one concrete, specific action point or question for the teacher to address in their next class. Directly related to their comment. Where genuinely relevant, this can draw on the professional teaching reference above, expressed in plain, practical language — never naming a book, author, or framework.\n\nRules:\n- No bullet points anywhere\n- No headers or labels\n- Just the three paragraphs, separated by a blank line\n- In English\n- Never mention book titles, author names, or framework names (e.g. TKT, CEFR) in the output\n- Never quote dates back at the teacher or say things like "three weeks ago" unless the history above actually shows it\n- Write only the feedback text, nothing else.';
 
   // A call with no ceiling can hang forever, and the batch loop waits on it —
   // which is how a whole run freezes on "Generating 1/20" showing nothing.
@@ -454,7 +506,9 @@ async function generateAll() {
   for (let i = 0; i < pending.length; i++) {
     const r = pending[i];
     document.getElementById('progress').textContent = (i+1) + '/' + pending.length + ' — ' + r.teacher + ' · ' + r.course;
-    log('Generating ' + (i+1) + '/' + pending.length + ': ' + r.teacher + ' · ' + r.course + ' · ' + r.date);
+    const hist = priorRecords(r).length;
+    log('Generating ' + (i+1) + '/' + pending.length + ': ' + r.teacher + ' · ' + r.course + ' · ' + r.date
+        + (hist ? '  (building on ' + hist + ' earlier week' + (hist !== 1 ? 's' : '') + ')' : '  (no earlier weeks yet)'));
 
     let success = false;
     let attempts = 0;
