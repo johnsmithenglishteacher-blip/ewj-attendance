@@ -88,6 +88,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .t-meta{font-size:11px;color:#888}
 .ai-block{background:#EEEDFE;border-left:3px solid #534AB7;border-radius:0 8px 8px 0;padding:.65rem .9rem;margin:.4rem 0;font-size:12px;line-height:1.65}
 .ai-lbl{font-size:10px;font-weight:600;color:#534AB7;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.ai-src{font-size:10.5px;color:#6b6a7d;margin-top:5px;font-style:italic;line-height:1.5}
+.ai-srclist{margin-top:.7rem;border:1px solid #e0dfd8;border-radius:8px;background:#fcfcfa}
+.ai-srclist>summary{cursor:pointer;padding:.5rem .8rem;font-size:11px;font-weight:600;color:#6b6a7d;list-style:none}
+.ai-srclist>summary::-webkit-details-marker{display:none}
+.ai-srclist>summary::before{content:'▸ ';color:#a8a79c}
+.ai-srclist[open]>summary::before{content:'▾ '}
+.ai-srcitem{padding:.5rem .8rem;border-top:1px solid #efeee9;font-size:11.5px;line-height:1.55;color:#3d3c37}
+.ai-srcitem-lbl{font-size:10px;font-weight:600;color:#534AB7;margin-bottom:2px}
 .ai-followup{background:#E6F1FB;border-left:3px solid #185FA5;border-radius:0 8px 8px 0;padding:.5rem .8rem;margin-top:.4rem;font-size:12px;color:#185FA5;line-height:1.5}
 .alert-block{border-radius:8px;padding:.65rem .9rem;margin:.35rem 0;font-size:12px;line-height:1.5}
 .alert-block.high{background:#FAEEDA;border-left:3px solid #854F0B}
@@ -501,31 +509,63 @@ async function genLessonFeedback(r){
   return ai||{style,analysis:'Unable to generate.',followup:null,alert:null};
 }
 
+// ── Where an alert's points came from ─────────────────────────────────────
+// "Several comments highlight…" is only useful if you can see which comments.
+// Every point now carries the labels of the registers behind it, and the whole
+// set of comments the alert was built from sits underneath it, unedited.
+function escA(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+// A point is either a plain string (what older replies sent) or {text,sources}.
+function ptText(x){return (x&&typeof x==='object')?(x.text||''):String(x||'');}
+function ptSrc(x){return (x&&typeof x==='object')?x.sources:null;}
+function srcHtml(src){
+  if(!src)return'';
+  var list=(Array.isArray(src)?src:[src]).filter(function(x){return x&&String(x).trim();});
+  if(!list.length)return'';
+  return '<div class="ai-src">from '+list.map(escA).join('  ·  ')+'</div>';
+}
+function srcListHtml(used){
+  if(!used||!used.length)return'';
+  var h='<details class="ai-srclist"><summary>The '+used.length+' comment'+(used.length!==1?'s':'')+' this was built from</summary>';
+  used.forEach(function(c){
+    h+='<div class="ai-srcitem"><div class="ai-srcitem-lbl">'+escA(c.label)+'</div>'+escA(c.text)+'</div>';
+  });
+  return h+'</details>';
+}
+
 async function genDailyAlert(dayRecs){
-  const comments=dayRecs.filter(r=>r.comment&&r.comment.trim()).map(r=>`${r.teacher} · ${r.course||r.group||r.className||''}: "${r.comment}"`).join('\n');
-  if(!comments)return null;
-  return callAI(
-    `You are a head teacher assistant. Given lesson comments, respond ONLY with JSON: {"highPriority":[{student,teacher,text}],"positive":[string],"leadershipNote":string}. Max 3 high priority, max 4 positive. One sentence each.`,
-    `Today's comments:\n${comments}`
+  const used=dayRecs.filter(r=>r.comment&&r.comment.trim())
+    .map(r=>({label:`${r.teacher} · ${r.course||r.group||r.className||''}`, text:r.comment.trim()}));
+  if(!used.length)return null;
+  const comments=used.map(c=>`${c.label}: "${c.text}"`).join('\n');
+  const a=await callAI(
+    `You are a head teacher assistant. Every comment below begins with a label such as "Mary · PET 1". Respond ONLY with JSON: {"highPriority":[{"student":string,"teacher":string,"text":string,"sources":[string]}],"positive":[{"text":string,"sources":[string]}],"leadershipNote":{"text":string,"sources":[string]}}. Each "sources" array holds the labels, copied exactly as given, of the comments that point actually rests on — at least one, never a label you were not given, and never one that does not genuinely support the point. Max 3 high priority, max 4 positive. One sentence each.`,
+    `Today's comments:\n${comments}`, 2, 1400
   );
+  if(a) a._sourceComments=used;
+  return a;
 }
 
 async function genWeeklyAlert(weekRecs){
-  const comments=weekRecs.filter(r=>r.comment&&r.comment.trim()).slice(0,14).map(r=>`${r.teacher} · ${r.course||r.group||r.className||''} (${r.date}): "${r.comment}"`).join('\n');
-  if(!comments)return null;
-  return callAI(
-    `You are a head teacher assistant reviewing a full week. Respond ONLY with JSON: {"weekSummary":string,"highPriority":[{student,teacher,text}],"positive":[string],"leadershipNote":string}. Max 3 high priority, max 4 positive. One sentence each.`,
-    `This week's comments:\n${comments}`
+  const used=weekRecs.filter(r=>r.comment&&r.comment.trim()).slice(0,14)
+    .map(r=>({label:`${r.teacher} · ${r.course||r.group||r.className||''} (${r.date})`, text:r.comment.trim()}));
+  if(!used.length)return null;
+  const comments=used.map(c=>`${c.label}: "${c.text}"`).join('\n');
+  const a=await callAI(
+    `You are a head teacher assistant reviewing a full week. Every comment below begins with a label such as "Mary · PET 1 (20/10/2026)". Respond ONLY with JSON: {"weekSummary":string,"highPriority":[{"student":string,"teacher":string,"text":string,"sources":[string]}],"positive":[{"text":string,"sources":[string]}],"leadershipNote":{"text":string,"sources":[string]}}. Each "sources" array holds the labels, copied exactly as given, of the comments that point actually rests on — at least one, never a label you were not given, and never one that does not genuinely support the point. If you say "several comments", cite every one of them. Max 3 high priority, max 4 positive. One sentence each.`,
+    `This week's comments:\n${comments}`, 2, 1800
   );
+  if(a) a._sourceComments=used;
+  return a;
 }
 
 function alertHtml(a){
   if(!a)return'<p style="font-size:12px;color:#aaa">No comments to analyse.</p>';
   let h='';
-  if(a.weekSummary)h+=`<div class="ai-block" style="margin-bottom:.6rem"><div class="ai-lbl">Week overview</div>${a.weekSummary}</div>`;
-  if(a.leadershipNote)h+=`<div class="ai-block" style="margin-bottom:.6rem"><div class="ai-lbl">Leadership note</div>${a.leadershipNote}</div>`;
-  if(a.highPriority&&a.highPriority.length){h+=`<div class="slbl" style="margin-top:.6rem">🟠 High priority</div>`;a.highPriority.forEach(x=>{h+=`<div class="alert-block high"><div class="alert-lbl">${x.student||''}${x.teacher?' · '+x.teacher:''}</div>${x.text}</div>`;});}
-  if(a.positive&&a.positive.length){h+=`<div class="slbl" style="margin-top:.6rem">🟢 Positive developments</div>`;a.positive.forEach(x=>{h+=`<div class="alert-block positive"><div class="alert-lbl">Positive</div>${x}</div>`;});}
+  if(a.weekSummary)h+=`<div class="ai-block" style="margin-bottom:.6rem"><div class="ai-lbl">Week overview</div>${escA(a.weekSummary)}</div>`;
+  if(a.leadershipNote&&ptText(a.leadershipNote))h+=`<div class="ai-block" style="margin-bottom:.6rem"><div class="ai-lbl">Leadership note</div>${escA(ptText(a.leadershipNote))}${srcHtml(ptSrc(a.leadershipNote))}</div>`;
+  if(a.highPriority&&a.highPriority.length){h+=`<div class="slbl" style="margin-top:.6rem">🟠 High priority</div>`;a.highPriority.forEach(x=>{h+=`<div class="alert-block high"><div class="alert-lbl">${escA(x.student||'')}${x.teacher?' · '+escA(x.teacher):''}</div>${escA(x.text||'')}${srcHtml(x.sources)}</div>`;});}
+  if(a.positive&&a.positive.length){h+=`<div class="slbl" style="margin-top:.6rem">🟢 Positive developments</div>`;a.positive.forEach(x=>{h+=`<div class="alert-block positive"><div class="alert-lbl">Positive</div>${escA(ptText(x))}${srcHtml(ptSrc(x))}</div>`;});}
+  h+=srcListHtml(a._sourceComments);
   return h;
 }
 
@@ -793,10 +833,11 @@ loadAll().then(buildReports);
 function alertHtml(a){
   if(!a)return'<p style="font-size:12px;color:#aaa">No comments to analyse.</p>';
   var h='';
-  if(a.weekSummary)h+='<div class="ai-block" style="margin-bottom:.6rem"><div class="ai-lbl">Week overview</div>'+a.weekSummary+'</div>';
-  if(a.leadershipNote)h+='<div class="ai-block" style="margin-bottom:.6rem"><div class="ai-lbl">Leadership note</div>'+a.leadershipNote+'</div>';
-  if(a.highPriority&&a.highPriority.length){h+='<div class="slbl" style="margin-top:.6rem">🟠 High priority</div>';a.highPriority.forEach(function(x){h+='<div class="alert-block high"><div class="alert-lbl">'+(x.student||'')+(x.teacher?' · '+x.teacher:'')+'</div>'+x.text+'</div>';});}
-  if(a.positive&&a.positive.length){h+='<div class="slbl" style="margin-top:.6rem">🟢 Positive developments</div>';a.positive.forEach(function(x){h+='<div class="alert-block positive"><div class="alert-lbl">Positive</div>'+x+'</div>';});}
+  if(a.weekSummary)h+='<div class="ai-block" style="margin-bottom:.6rem"><div class="ai-lbl">Week overview</div>'+escA(a.weekSummary)+'</div>';
+  if(a.leadershipNote&&ptText(a.leadershipNote))h+='<div class="ai-block" style="margin-bottom:.6rem"><div class="ai-lbl">Leadership note</div>'+escA(ptText(a.leadershipNote))+srcHtml(ptSrc(a.leadershipNote))+'</div>';
+  if(a.highPriority&&a.highPriority.length){h+='<div class="slbl" style="margin-top:.6rem">🟠 High priority</div>';a.highPriority.forEach(function(x){h+='<div class="alert-block high"><div class="alert-lbl">'+escA(x.student||'')+(x.teacher?' · '+escA(x.teacher):'')+'</div>'+escA(x.text||'')+srcHtml(x.sources)+'</div>';});}
+  if(a.positive&&a.positive.length){h+='<div class="slbl" style="margin-top:.6rem">🟢 Positive developments</div>';a.positive.forEach(function(x){h+='<div class="alert-block positive"><div class="alert-lbl">Positive</div>'+escA(ptText(x))+srcHtml(ptSrc(x))+'</div>';});}
+  h+=srcListHtml(a._sourceComments);
   return h;
 }
 
