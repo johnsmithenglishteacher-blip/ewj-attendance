@@ -497,7 +497,19 @@ async function callAI(system,userMsg,retries,maxTokens){
       return null;
     }
     aiCache[key]=p;return p;
-  }catch(e){lastAIError=e.message||String(e);console.error('AI call failed:',e);return null;}
+  }catch(e){
+    // A dropped connection is worth one more go — that is usually the network,
+    // not the request. Everything else has already been reported above.
+    const network=/failed to fetch|network|load failed|timed out|no reply/i.test(e.message||'');
+    if(network && retries>0){
+      console.warn('AI call dropped, retrying once:',e.message);
+      await new Promise(r=>setTimeout(r,3000));
+      return callAI(system,userMsg,retries-1,maxTokens);
+    }
+    lastAIError=(e.message||String(e))+(network?' — the connection was dropped before an answer came back':'');
+    console.error('AI call failed:',e);
+    return null;
+  }
 }
 
 async function genLessonFeedback(r){
@@ -532,14 +544,17 @@ function srcListHtml(used){
   return h+'</details>';
 }
 
+// Comments run long now; the full text makes the request slow enough to be dropped.
+function clipC(s){s=String(s||'').trim().replace(/\s+/g,' ');return s.length>340?s.slice(0,340)+'\u2026':s;}
+
 async function genDailyAlert(dayRecs){
   const used=dayRecs.filter(r=>r.comment&&r.comment.trim())
-    .map(r=>({label:`${r.teacher} · ${r.course||r.group||r.className||''}`, text:r.comment.trim()}));
+    .map(r=>({label:`${r.teacher} · ${r.course||r.group||r.className||''}`, text:String(r.comment).trim()}));
   if(!used.length)return null;
-  const comments=used.map(c=>`${c.label}: "${c.text}"`).join('\n');
+  const comments=used.map(c=>`${c.label}: "${clipC(c.text)}"`).join('\n');
   const a=await callAI(
     `You are a head teacher assistant. Every comment below begins with a label such as "Mary · PET 1". Respond ONLY with JSON: {"highPriority":[{"student":string,"teacher":string,"text":string,"sources":[string]}],"positive":[{"text":string,"sources":[string]}],"leadershipNote":{"text":string,"sources":[string]}}. Each "sources" array holds the labels, copied exactly as given, of the comments that point actually rests on — at least one, never a label you were not given, and never one that does not genuinely support the point. Max 3 high priority, max 4 positive. One sentence each.`,
-    `Today's comments:\n${comments}`, 2, 1400
+    `Today's comments:\n${comments}`, 2, 850
   );
   if(a) a._sourceComments=used;
   return a;
@@ -547,12 +562,12 @@ async function genDailyAlert(dayRecs){
 
 async function genWeeklyAlert(weekRecs){
   const used=weekRecs.filter(r=>r.comment&&r.comment.trim()).slice(0,14)
-    .map(r=>({label:`${r.teacher} · ${r.course||r.group||r.className||''} (${r.date})`, text:r.comment.trim()}));
+    .map(r=>({label:`${r.teacher} · ${r.course||r.group||r.className||''} (${r.date})`, text:String(r.comment).trim()}));
   if(!used.length)return null;
-  const comments=used.map(c=>`${c.label}: "${c.text}"`).join('\n');
+  const comments=used.map(c=>`${c.label}: "${clipC(c.text)}"`).join('\n');
   const a=await callAI(
     `You are a head teacher assistant reviewing a full week. Every comment below begins with a label such as "Mary · PET 1 (20/10/2026)". Respond ONLY with JSON: {"weekSummary":string,"highPriority":[{"student":string,"teacher":string,"text":string,"sources":[string]}],"positive":[{"text":string,"sources":[string]}],"leadershipNote":{"text":string,"sources":[string]}}. Each "sources" array holds the labels, copied exactly as given, of the comments that point actually rests on — at least one, never a label you were not given, and never one that does not genuinely support the point. If you say "several comments", cite every one of them. Max 3 high priority, max 4 positive. One sentence each.`,
-    `This week's comments:\n${comments}`, 2, 1800
+    `This week's comments:\n${comments}`, 2, 1000
   );
   if(a) a._sourceComments=used;
   return a;
@@ -1096,9 +1111,13 @@ async function genHeadTeacherItems(weekRecs){
 async function genWeeklyAgenda(weekRecs){
   const withComments=weekRecs.filter(r=>r.comment&&r.comment.trim());
   if(!withComments.length)return null;
-  // Twenty comments is plenty for a ten-minute meeting and keeps the call quick.
-  const block=withComments.slice(0,20).map(r=>
-    `${r.teacher} · ${r.course||r.group||r.className||''} (${r.date}): "${r.comment}"`).join('\n');
+  // Comments have grown long over the course. Sending twenty of them in full
+  // made the request slow to generate and the connection was being dropped
+  // before the answer came back. Fourteen, trimmed, says the same thing.
+  const block=withComments.slice(0,14).map(r=>{
+    const c=String(r.comment).trim().replace(/\s+/g,' ');
+    return `${r.teacher} · ${r.course||r.group||r.className||''} (${r.date}): "${c.length>340?c.slice(0,340)+'…':c}"`;
+  }).join('\n');
   const system='You are John, founder and head teacher of English with John, a Cambridge exam centre in Catalonia. '
     +'Write the agenda for a SHORT weekly team meeting — ten minutes, standing up, six or seven teachers. '
     +'Base every line strictly on the lesson comments given. Never invent a student, teacher, class or incident that is not in them. '
@@ -1110,9 +1129,10 @@ async function genWeeklyAgenda(weekRecs){
     +'"followUps" (array of 0-4 {who, action} — a specific short ask of a named teacher), '
     +'"watch" (array of 0-3 {who, what} — a named student or group to keep an eye on, and why, from the comments), '
     +'"close" (string — one sentence to end the meeting on).';
-  // 700 was too tight — the answer was being cut off mid-sentence, which left
-  // broken JSON and no agenda at all. 1800 leaves comfortable room.
-  return callAI(system,`This week's lesson comments:\n${block}`,2,1800);
+  // A long generation takes 30-60 seconds and the connection gets dropped before
+  // it finishes — which is what ERR_CONNECTION_TIMED_OUT was. 900 comes back in
+  // a few seconds, and if it does run over, parseLooseJSON keeps what arrived.
+  return callAI(system,`This week's lesson comments:\n${block}`,2,900);
 }
 
 function renderWeeklyAgenda(ag, weekRecs){
