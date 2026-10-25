@@ -104,7 +104,7 @@
 // CONFIG — also editable in the UI above
 // ═══════════════════════════════════════
 const DEFAULT_FB_URL = 'https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
-const PROXY_URL = 'https://ewj-proxy.johnsmithenglishteacher.workers.dev';
+const PROXY_URL = 'https://api.anthropic.com/v1/messages';
 
 // The database address is fixed. The box on the page is display-only: a browser
 // autofilling a stale address into it used to make every request hang until it timed out.
@@ -389,7 +389,8 @@ async function callClaude(r) {
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': API_KEY(),
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',

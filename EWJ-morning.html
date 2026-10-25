@@ -369,7 +369,7 @@ const rateLabel=r=>r===null?'–':r+'%';
 const barColor=r=>r>=85?'#3B6D11':r>=70?'#854F0B':'#A32D2D';
 
 /* ── AI ── */
-const PROXY_URL='https://ewj-proxy.johnsmithenglishteacher.workers.dev';
+const PROXY_URL='https://api.anthropic.com/v1/messages';
 
 function showKeyState(){
   const el=document.getElementById('apiKeyState');
@@ -465,7 +465,7 @@ async function callAI(system,userMsg,retries,maxTokens){
     // A hanging request used to freeze this whole tab on its spinner with nothing
     // on screen to say why. Give up after 45 seconds and report it instead.
     const res=await Promise.race([
-      fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01'},
+      fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
         body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:maxTokens||1200,system,messages:[{role:'user',content:userMsg}]})}),
       new Promise((_,rej)=>setTimeout(()=>rej(new Error('no reply from the AI proxy after 90 seconds')),90000))
     ]);

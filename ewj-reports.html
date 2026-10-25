@@ -161,7 +161,7 @@ function getWeekRecs(mon,sun){
   return allRecords.filter(r=>{const d=parseRecDate(r.date);if(!d)return false;const t=d.getTime();return t>=m&&t<=s;});
 }
 
-const PROXY_URL='https://ewj-proxy.johnsmithenglishteacher.workers.dev';
+const PROXY_URL='https://api.anthropic.com/v1/messages';
 let lastAIError='';
 function getApiKey(){try{return localStorage.getItem('ewj_api_key')||'';}catch(e){return'';}}
 async function callAI(system,userMsg){
@@ -171,7 +171,7 @@ async function callAI(system,userMsg){
   if(!apiKey){lastAIError='No Claude API key saved in this browser. Open the Morning Briefing and paste your key there — the reports page uses the same one.';return null;}
   try{
     const res=await fetch(PROXY_URL,{method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01'},
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
       body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,system,messages:[{role:'user',content:userMsg}]})});
     const data=await res.json();
     if(data.error){lastAIError=data.error.message||JSON.stringify(data.error);return null;}
