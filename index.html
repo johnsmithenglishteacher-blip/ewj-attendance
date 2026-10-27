@@ -615,6 +615,37 @@ function pickSlot(i){
   }
 }
 
+// ── How long a student counts as "new" ────────────────────────────────────
+// The NEW badge used to stick to a student all year: the flag was written onto
+// every register and nothing ever cleared it, and because an added student was
+// never put into the class list, the teacher had to add them again each week —
+// which made them new all over again. Now they join the class list on their
+// first register, and the badge expires two weeks after their first class.
+const NEW_FOR_DAYS = 14;
+
+function firstSeenStamp(name){
+  const key=String(name||'').trim().toLowerCase();
+  if(!key) return 0;
+  let earliest=0;
+  state.records.forEach(r=>{
+    if(!r||r.isPlanning) return;
+    if(!(r.students||[]).some(s=>s&&String(s.name||'').trim().toLowerCase()===key)) return;
+    const t=recStamp(r);
+    if(t&&(!earliest||t<earliest)) earliest=t;
+  });
+  return earliest;
+}
+
+function isNewStudent(name, asOf){
+  const first=firstSeenStamp(name);
+  if(!first) return true;                       // no register yet — this is their first class
+  // Everybody's first class is in week 36, so nobody is "new" at the start of
+  // the course. Only someone who joined afterwards gets the badge.
+  if(first <= COURSE_START + NEW_FOR_DAYS*86400000) return false;
+  const now=asOf?(new Date(asOf).getTime()||Date.now()):Date.now();
+  return (now-first) <= NEW_FOR_DAYS*86400000;
+}
+
 function setStu(n,v){
   reg.status[n]=v;
   if(v==='present')delete reg.notes[n];
@@ -662,7 +693,10 @@ async function submitReg(){
   const entry={id:reg.editingId||Date.now(),teacher:s.teacher,day,time:s.time,course:s.course,
     week:'Week '+week,date:dateStr,submittedAt:fmtT(now),submittedAtFull:now.toISOString(),
     comment:'',commentDone:false,commentAt:null,
-    students:allStu.map(n=>({name:n,status:reg.flags[n]==='dropped'?'dropped':(reg.status[n]||'present'),note:reg.notes[n]||'',flag:reg.flags[n]||''}))};
+    students:allStu.map(n=>({name:n,status:reg.flags[n]==='dropped'?'dropped':(reg.status[n]||'present'),note:reg.notes[n]||'',
+      // Only write "new" while they really are new, so the badge cannot
+      // outlive its two weeks by being stored on every later register.
+      flag:reg.flags[n]==='dropped'?'dropped':((reg.added.indexOf(n)!==-1||isNewStudent(n,reg.dateVal))&&reg.flags[n]==='new'?'new':'')}))};
   if(reg.editingId){const ex=state.records.find(r=>r.id===reg.editingId);if(ex){entry.comment=ex.comment;entry.commentDone=ex.commentDone;entry.commentAt=ex.commentAt;}}
   // Update local state immediately — no bulk Firebase write
   if(reg.editingId){
@@ -682,6 +716,26 @@ async function submitReg(){
   // Auto-submit to Google Sheets (if SHEETS_URL is set)
   if(SHEETS_URL){
     fetch(SHEETS_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({type:'attendance',...entry})}).catch(()=>{});
+  }
+
+  // ── A new student joins the class list ────────────────────────────────
+  // Added students used to live only on the register, never in the timetable,
+  // so the class size never grew and the teacher had to add them again the
+  // following week. Now they join the group properly on their first register.
+  if(reg.added.length){
+    const joining=reg.added.filter(n=>n&&reg.flags[n]!=='dropped');
+    if(joining.length){
+      let joinedAny=false;
+      const withJoiners=state.schedule.map(slot=>{
+        if(slotKey(slot)!==slotKey(s)) return slot;
+        const have=(slot.students||[]).map(x=>String(x).trim().toLowerCase());
+        const toAdd=joining.filter(n=>!have.includes(String(n).trim().toLowerCase()));
+        if(!toAdd.length) return slot;
+        joinedAny=true;
+        return {...slot, students:[...(slot.students||[]), ...toAdd]};
+      });
+      if(joinedAny) await saveSchedule(withJoiners);
+    }
   }
 
   // ── Permanent drop: remove dropped students from schedule permanently ──
@@ -921,15 +975,19 @@ function renderRegister(){
     // Student rows
     allStu.forEach(n=>{
       const s=reg.status[n]||'present',f=reg.flags[n]||'';
-      const isD=f==='dropped',isN=f==='new',ta=aMap_[n]||0;
+      // "New" is worked out from when they actually started, not from a flag
+      // that never expired. The ✕ (undo this addition) only belongs to someone
+      // added in this register; after that the normal Drop button applies.
+      const justAdded=reg.added.indexOf(n)!==-1;
+      const isD=f==='dropped',isN=!isD&&(justAdded||isNewStudent(n,reg.dateVal)),ta=aMap_[n]||0;
       const row=document.createElement('div');row.className='stu '+(isD?'dropped':s)+(isN?' newstu':'');
       const top=document.createElement('div');top.className='stu-top';
       if(isN){const nb=document.createElement('span');nb.style.cssText='font-size:10px;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:20px;font-weight:700;flex-shrink:0;';nb.textContent='NEW';top.appendChild(nb);}
       const nm=document.createElement('span');nm.className='stu-name';nm.textContent=n;top.appendChild(nm);
       if(ta>0&&!isD){const ab=document.createElement('span');ab.className='absbdg';ab.textContent=ta+'A';top.appendChild(ab);}
       if(isD){const bl=document.createElement('span');bl.style.cssText='font-size:11px;color:#b91c1c;flex-shrink:0;';bl.textContent='left';top.appendChild(bl);}
-      const fb=document.createElement('button');fb.className='fb'+(isD?' dropped':isN?' newstu':'');fb.style.marginLeft='auto';fb.textContent=isD?'↩':isN?'✕':'Drop';
-      fb.onclick=()=>isD||isN?clearFlag(n):setFlag(n,'dropped');top.appendChild(fb);
+      const fb=document.createElement('button');fb.className='fb'+(isD?' dropped':justAdded?' newstu':'');fb.style.marginLeft='auto';fb.textContent=isD?'↩':justAdded?'✕':'Drop';
+      fb.onclick=()=>isD||justAdded?clearFlag(n):setFlag(n,'dropped');top.appendChild(fb);
       row.appendChild(top);
       const bot=document.createElement('div');bot.className='stu-bot';
       ['p','l','a'].forEach(type=>{
