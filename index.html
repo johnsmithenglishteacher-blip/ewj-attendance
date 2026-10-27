@@ -608,7 +608,12 @@ function pickSlot(i){
   if(ex){
     const st={},fl={},nt={};
     (ex.students||[]).forEach(x=>{st[x.name]=x.status==='dropped'?'absent':x.status;if(x.flag)fl[x.name]=x.flag;if(x.note)nt[x.name]=x.note;});
-    reg.status=st;reg.flags=fl;reg.notes=nt;reg.added=(ex.students||[]).filter(x=>x.flag==='new').map(x=>x.name);reg.editingId=ex.id;
+    reg.status=st;reg.flags=fl;reg.notes=nt;reg.editingId=ex.id;
+    // "Added" means on this register but not yet in the class list, so the ✕
+    // can undo it. Someone already in the group is a normal student, however
+    // old a 'new' flag on the record says they are.
+    const roster=(s.students||[]).map(x=>String(x).trim().toLowerCase());
+    reg.added=(ex.students||[]).filter(x=>x.flag==='new'&&roster.indexOf(String(x.name||'').trim().toLowerCase())===-1).map(x=>x.name);
   } else {
     const st={};(s.students||[]).forEach(n=>{st[n]='present';});
     reg.status=st;reg.flags={};reg.notes={};reg.added=[];reg.editingId=null;
@@ -975,11 +980,11 @@ function renderRegister(){
     // Student rows
     allStu.forEach(n=>{
       const s=reg.status[n]||'present',f=reg.flags[n]||'';
-      // "New" is worked out from when they actually started, not from a flag
-      // that never expired. The ✕ (undo this addition) only belongs to someone
-      // added in this register; after that the normal Drop button applies.
+      // NEW is decided purely by when they first attended — never by a flag
+      // sitting on an old register. The ✕ (undo this addition) is separate: it
+      // belongs only to someone who is on this register but not yet in the class list.
       const justAdded=reg.added.indexOf(n)!==-1;
-      const isD=f==='dropped',isN=!isD&&(justAdded||isNewStudent(n,reg.dateVal)),ta=aMap_[n]||0;
+      const isD=f==='dropped',isN=!isD&&isNewStudent(n,reg.dateVal),ta=aMap_[n]||0;
       const row=document.createElement('div');row.className='stu '+(isD?'dropped':s)+(isN?' newstu':'');
       const top=document.createElement('div');top.className='stu-top';
       if(isN){const nb=document.createElement('span');nb.style.cssText='font-size:10px;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:20px;font-weight:700;flex-shrink:0;';nb.textContent='NEW';top.appendChild(nb);}
