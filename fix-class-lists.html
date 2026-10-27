@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EWJ — Add missing students to their classes</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#f8fafc;color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+       font-size:15px;line-height:1.55;padding:24px 16px 64px}
+  .wrap{max-width:820px;margin:0 auto}
+  h1{font-size:21px;font-weight:800;margin-bottom:4px}
+  .sub{color:#64748b;font-size:13.5px;margin-bottom:20px;line-height:1.6}
+  .card{background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:16px 18px;margin-bottom:14px}
+  .card h2{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:11px}
+  button{font-family:inherit;font-size:13px;font-weight:700;border:none;border-radius:9px;
+         padding:10px 17px;cursor:pointer;background:#4f46e5;color:#fff}
+  button:disabled{background:#cbd5e1;color:#64748b;cursor:not-allowed}
+  button.go{background:#15803d}
+  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  .stat{display:flex;gap:26px;flex-wrap:wrap;margin:4px 0 10px}
+  .stat div{font-size:12px;color:#64748b}
+  .stat b{display:block;font-size:22px;color:#0f172a;font-weight:800;line-height:1.25}
+  .stat b.green{color:#15803d}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+  th{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  td.who{font-weight:600}
+  .note{font-size:12.5px;color:#64748b;margin-top:9px;line-height:1.55}
+  .err{background:#fef2f2;border:1.5px solid #fca5a5;color:#b91c1c;border-radius:9px;padding:11px 13px;margin-bottom:12px;font-size:13px;display:none}
+  .ok{background:#f0fdf4;border:1.5px solid #86efac;color:#15803d;border-radius:9px;padding:11px 13px;margin-bottom:12px;font-size:13px;display:none}
+  .warn{background:#fffbeb;border:1.5px solid #fcd34d;color:#854d0e;border-radius:9px;padding:12px 14px;font-size:13px;line-height:1.6;margin-bottom:14px}
+  #log{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#0f172a;color:#e2e8f0;
+       border-radius:9px;padding:12px;max-height:240px;overflow:auto;white-space:pre-wrap;margin-top:12px}
+  label.pick{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer}
+  input[type=checkbox]{margin-top:3px;width:15px;height:15px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Add missing students to their classes</h1>
+<p class="sub">Students added during a register used to stay on that register only — they were never written into the class list, so the class size never grew and the teacher had to add them again each week. This finds everyone in that position and puts them in their group.</p>
+
+<div class="warn"><b>Upload the latest index.html first.</b> From that version on, a student added during a register joins the class automatically. This tool is only for the ones added before that, under the old behaviour.</div>
+
+<div class="err" id="err"></div>
+<div class="ok" id="ok"></div>
+
+<div class="card">
+  <h2>Step 1 — Find them</h2>
+  <div class="row"><button id="b1">Scan registers and timetable</button></div>
+  <div id="summary"></div>
+</div>
+
+<div class="card">
+  <h2>Step 2 — Save a copy of the timetable</h2>
+  <div class="row"><button id="b2" disabled>Download the timetable as it is now</button></div>
+  <div class="note">Downloads <code>schedule-before-adding-students.json</code>. Step 3 stays locked until you do. It is the way back if anything looks wrong.</div>
+</div>
+
+<div class="card">
+  <h2>Step 3 — Add them</h2>
+  <div class="row"><button id="b3" class="go" disabled>Add the ticked students to their classes</button></div>
+  <div class="note">Only adds names to class lists. No register is changed, no student is removed, nothing else in the database is touched.</div>
+</div>
+
+<div id="log"></div>
+
+</div>
+
+<script>
+const FB='https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
+const L=document.getElementById('log'),E=document.getElementById('err'),O=document.getElementById('ok');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight;}
+function err(m){E.textContent=m;E.style.display='block';O.style.display='none';}
+function ok(m){O.innerHTML=m;O.style.display='block';E.style.display='none';}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function norm(s){return String(s==null?'':s).trim().toLowerCase();}
+function slotKey(s){return s.teacher+'|'+s.day+'|'+s.time+'|'+s.course;}
+function recStamp(r){return Date.parse((r&&r.submittedAtFull)||'')||Number(r&&r.id)||0;}
+
+let schedule=null, candidates=[], downloaded=false;
+
+document.getElementById('b1').onclick=async()=>{
+  E.style.display='none';O.style.display='none';log('Reading …');
+  try{
+    const [sRes,rRes]=await Promise.all([fetch(FB+'/schedule.json'),fetch(FB+'/records.json')]);
+    if(!sRes.ok||!rRes.ok) throw new Error('HTTP '+(sRes.ok?rRes.status:sRes.status));
+    const sData=await sRes.json();
+    const rData=await rRes.json()||{};
+    schedule=Array.isArray(sData)?sData:Object.values(sData||{});
+    const records=Object.values(rData).filter(r=>r&&!r.isPlanning&&r.teacher);
+    log('Timetable: '+schedule.length+' classes.   Registers: '+records.length+'.');
+
+    // For each class, who has turned up in its registers but is not on its list?
+    const bySlot={};
+    schedule.forEach(s=>{ bySlot[slotKey(s)]={slot:s, roster:new Set((s.students||[]).map(norm)), found:{}}; });
+
+    let orphanRecords=0;
+    records.forEach(r=>{
+      const k=r.teacher+'|'+r.day+'|'+r.time+'|'+r.course;
+      const entry=bySlot[k];
+      if(!entry){orphanRecords++;return;}             // register for a class no longer on the timetable
+      (r.students||[]).forEach(st=>{
+        if(!st||!st.name) return;
+        if(st.status==='dropped'||st.flag==='dropped') return;   // they left — leave them out
+        const n=norm(st.name);
+        if(!n||entry.roster.has(n)) return;
+        if(!entry.found[n]) entry.found[n]={name:String(st.name).trim(),times:0,first:0,last:0};
+        const f=entry.found[n];
+        f.times++;
+        const t=recStamp(r);
+        if(t){ if(!f.first||t<f.first)f.first=t; if(t>f.last)f.last=t; }
+      });
+    });
+
+    candidates=[];
+    Object.values(bySlot).forEach(e=>{
+      Object.values(e.found).forEach(f=>{
+        candidates.push({slot:e.slot, key:slotKey(e.slot), name:f.name, times:f.times, first:f.first, last:f.last});
+      });
+    });
+    candidates.sort((a,b)=>b.times-a.times || a.name.localeCompare(b.name));
+
+    const fmt=ms=>ms?new Date(ms).toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'—';
+    let h='<div class="stat">'
+      +'<div>Students to add<b class="green">'+candidates.length+'</b></div>'
+      +'<div>Classes affected<b>'+new Set(candidates.map(c=>c.key)).size+'</b></div>'
+      +'</div>';
+
+    if(!candidates.length){
+      h+='<p class="note">Nothing to do — every student who appears in a register is already on their class list.</p>';
+      document.getElementById('summary').innerHTML=h;
+      log('Nothing to add.');
+      return;
+    }
+
+    h+='<p class="note">Ticked students will be added. Untick anyone who should not be in that class — a one-off visitor, or a name typed by mistake.</p>';
+    h+='<table><tr><th></th><th>Student</th><th>Class</th><th>Registers</th><th>First</th><th>Last</th></tr>';
+    candidates.forEach((c,i)=>{
+      // One appearance only is more likely a visitor or a typo, so it starts unticked.
+      const on=c.times>1?' checked':'';
+      h+='<tr><td><input type="checkbox" id="c'+i+'"'+on+'></td>'
+        +'<td class="who"><label class="pick" for="c'+i+'">'+esc(c.name)+'</label></td>'
+        +'<td>'+esc(c.slot.teacher)+' · '+esc(c.slot.day)+' '+esc(c.slot.time)+' · '+esc(c.slot.course)+'</td>'
+        +'<td>'+c.times+'</td><td>'+fmt(c.first)+'</td><td>'+fmt(c.last)+'</td></tr>';
+    });
+    h+='</table>';
+    if(orphanRecords) h+='<p class="note">'+orphanRecords+' register'+(orphanRecords>1?'s':'')+' belong to a class that is no longer on the timetable. Those are ignored.</p>';
+    document.getElementById('summary').innerHTML=h;
+    document.getElementById('b2').disabled=false;
+    log('Found '+candidates.length+' student(s) attending a class they are not listed in.');
+  }catch(e){err('Could not read: '+e.message);log('FAILED: '+e.message);}
+};
+
+document.getElementById('b2').onclick=()=>{
+  const b=new Blob([JSON.stringify(schedule,null,1)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='schedule-before-adding-students.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  downloaded=true;
+  document.getElementById('b3').disabled=false;
+  log('Timetable saved to your downloads.');
+};
+
+document.getElementById('b3').onclick=async()=>{
+  if(!downloaded||!schedule) return;
+  const picked=candidates.filter((c,i)=>{const el=document.getElementById('c'+i);return el&&el.checked;});
+  if(!picked.length){err('Nothing is ticked.');return;}
+  if(!confirm('Add '+picked.length+' student'+(picked.length>1?'s':'')+' to their class lists?\n\nNo register is changed and nobody is removed.'))return;
+  try{
+    log('Adding …');
+    const add={};
+    picked.forEach(c=>{ (add[c.key]=add[c.key]||[]).push(c.name); });
+
+    let changed=0;
+    const next=schedule.map(s=>{
+      const names=add[slotKey(s)];
+      if(!names||!names.length) return s;
+      const have=(s.students||[]).map(norm);
+      const toAdd=names.filter(n=>have.indexOf(norm(n))===-1);
+      if(!toAdd.length) return s;
+      changed+=toAdd.length;
+      log('  '+s.teacher+' · '+s.day+' '+s.time+' · '+s.course+'  +  '+toAdd.join(', '));
+      return {...s, students:[...(s.students||[]), ...toAdd]};
+    });
+
+    // One write of the whole timetable — the same thing the register itself does
+    // when a class list changes.
+    const res=await fetch(FB+'/schedule.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(next)});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+
+    const after=await (await fetch(FB+'/schedule.json')).json();
+    const arr=Array.isArray(after)?after:Object.values(after||{});
+    const total=arr.reduce((n,s)=>n+((s.students||[]).length),0);
+    log('Verified: '+arr.length+' classes, '+total+' places on the lists.');
+    ok('Done — '+changed+' student'+(changed>1?'s':'')+' added to their class lists. '
+      +'Open the register and the group sizes will match what the teachers are actually taking.');
+    document.getElementById('b3').disabled=true;
+  }catch(e){err('Could not save: '+e.message+'. Nothing partial happens — it is one write. Try again.');log('FAILED: '+e.message);}
+};
+</script>
+</body>
+</html>
