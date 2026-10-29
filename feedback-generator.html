@@ -171,10 +171,12 @@ async function loadRecords() {
     }
 
     const allRecs = rData ? (Array.isArray(rData) ? rData : Object.values(rData)).filter(r => r && r.teacher && !r.isPlanning) : [];
-    records = allRecs.filter(r => r.comment && r.comment.trim().length > 10);
+    records = allRecs.filter(hasRealComment);
     // John is the CEO, not someone to chase for lesson comments — he is never listed
     // as missing one and never receives a reminder.
-    missingCommentRecs = allRecs.filter(r => (!r.comment || r.comment.trim().length <= 10) && !r.nudgeSent && r.teacher !== 'John');
+    // A chased class with only a placeholder is still missing its comment, so it
+    // stays on the list — it just is not chased twice in the same breath.
+    missingCommentRecs = allRecs.filter(r => !hasRealComment(r) && !r.nudgeSent && r.teacher !== 'John');
     feedback = {};
     if (fData) Object.values(fData).forEach(f => { if (f && f.recordId) feedback[f.recordId] = f; });
     records.forEach(r => {
@@ -304,6 +306,10 @@ async function generateOne(id) {
 // been said to this teacher before — so the same follow-up could go out three
 // weeks running, and a teacher who actually did what was asked never heard so.
 // These assemble the recent history for the group, newest first.
+// "[Reminder sent — awaiting comment]" was written into the comment field by the
+// old reminder tool. It is not a comment and must never be treated as one.
+function isPlaceholderComment(c){return /reminder sent|awaiting comment/i.test(String(c||''));}
+function hasRealComment(r){var c=r&&r.comment;return !!(c&&c.trim().length>1&&!isPlaceholderComment(c));}
 function recStamp(r){
   const n = Number(r && r.id);
   if (n) return n;
@@ -378,7 +384,7 @@ async function callClaude(r) {
       + '- Only refer to things that actually appear above. Never invent a previous conversation, a promise, or a result. If the history does not support a claim of continuity, simply write about this week.\n'
     : '';
 
-  const prompt = 'You are the director of an English language academy in Catalonia, Spain (English with John). You are reading a teacher\'s lesson comment and writing brief, warm, professional feedback for them.\n\n' + context + '\n\n' + teachingKnowledge + continuity + '\n\nWrite feedback in EXACTLY this three-part format:\n\nPART 1 — Opening paragraph: Address the teacher by first name only (e.g. "Mireia,") followed by a comma. Acknowledge what they did or reported in their comment. Warm and positive tone. 2-3 sentences. Do NOT mention the course name, time slot, or day.\n\nPART 2 — "What I particularly like" paragraph: Start with exactly the words "What I particularly like is" and then highlight one specific thing from their comment that shows good practice, awareness, or initiative. 1-2 sentences.\n\nPART 3 — Follow-up line: Start with exactly "🔄 Follow-up for next lesson:" and give one concrete, specific action point or question for the teacher to address in their next class. Directly related to their comment. Where genuinely relevant, this can draw on the professional teaching reference above, expressed in plain, practical language — never naming a book, author, or framework.\n\nRules:\n- No bullet points anywhere\n- No headers or labels\n- Just the three paragraphs, separated by a blank line\n- In English\n- Never mention book titles, author names, or framework names (e.g. TKT, CEFR) in the output\n- Never quote dates back at the teacher or say things like "three weeks ago" unless the history above actually shows it\n- Write only the feedback text, nothing else.';
+  const prompt = 'You are John, the director of English with John, a Cambridge exam-prep academy in Catalonia. You are reading one of your teachers\' lesson comments and writing brief, warm, professional feedback for them, in your own voice.\n\n'+ 'IMPORTANT — who does what at this academy: YOU write every lesson plan and prepare the materials yourself. Your teachers deliver the lessons you have planned. They do not plan lessons, design activities or make resources.\n\n' + context + '\n\n' + teachingKnowledge + continuity + '\n\nWrite feedback in EXACTLY this three-part format:\n\nPART 1 — Opening paragraph: Address the teacher by first name only (e.g. "Mireia,") followed by a comma. Acknowledge what they did or reported in their comment. Warm and positive tone. 2-3 sentences. Do NOT mention the course name, time slot, or day.\n\nPART 2 — "What I particularly like" paragraph: Start with exactly the words "What I particularly like is" and then highlight one specific thing from their comment that shows good practice, awareness, or initiative. 1-2 sentences.\n\nPART 3 — Follow-up line: Start with exactly "🔄 Follow-up for next lesson:" and give one concrete, specific thing for the teacher to do in their next class, directly related to their comment. It must be something that is THEIRS to do in the room — how they run an activity you have already planned, grouping and seating, monitoring, pacing, managing behaviour, checking in with a named student, what to watch for. NEVER ask them to plan a lesson, design an activity, prepare materials or find resources: that is your job, not theirs. If their comment points to something that needs a change in the plan or new material, say that YOU will handle it in next week\'s plan (for example "I\'ll build more review of this into next week\'s plan") and give them a classroom-level ask instead. Where genuinely relevant, this can draw on the professional teaching reference above, expressed in plain, practical language — never naming a book, author, or framework.\n\nRules:\n- No bullet points anywhere\n- No headers or labels\n- Just the three paragraphs, separated by a blank line\n- In English\n- Never mention book titles, author names, or framework names (e.g. TKT, CEFR) in the output\n- Never quote dates back at the teacher or say things like "three weeks ago" unless the history above actually shows it\n- Write only the feedback text, nothing else.';
 
   // A call with no ceiling can hang forever, and the batch loop waits on it —
   // which is how a whole run freezes on "Generating 1/20" showing nothing.
@@ -613,7 +619,10 @@ async function sendNudge(recordId, teacher) {
     });
     await fetch(fbUrl + '/records/r' + recordId + '.json', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ comment: '[Reminder sent — awaiting comment]', commentDone: false, nudgeSent: true, nudgeSentAt: dateStr + ' ' + timeStr })
+      // Record that the reminder went out, and nothing else. Writing a placeholder
+      // into the comment used to make the register think the class had been
+      // commented on: the teacher stopped being asked and the real comment never came.
+      body: JSON.stringify({ commentDone: false, nudgeSent: true, nudgeSentAt: dateStr + ' ' + timeStr })
     });
     const idx = missingCommentRecs.findIndex(r => String(r.id) === String(recordId));
     if (idx !== -1) missingCommentRecs.splice(idx, 1);
@@ -655,7 +664,10 @@ async function sendAllNudges() {
       });
       await fetch(fbUrl + '/records/r' + r.id + '.json', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comment: '[Reminder sent — awaiting comment]', commentDone: false, nudgeSent: true, nudgeSentAt: dateStr + ' ' + timeStr })
+        // Record that the reminder went out, and nothing else. Writing a placeholder
+      // into the comment used to make the register think the class had been
+      // commented on: the teacher stopped being asked and the real comment never came.
+      body: JSON.stringify({ commentDone: false, nudgeSent: true, nudgeSentAt: dateStr + ' ' + timeStr })
       });
       nudges[r.id] = text;
       sent++;

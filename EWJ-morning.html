@@ -7,6 +7,10 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <script>
 let _coachLoaded=false;
+// "[Reminder sent — awaiting comment]" was written into the comment field by the
+// old reminder tool. It is not a comment and must never be treated as one.
+function isPlaceholderComment(c){return /reminder sent|awaiting comment/i.test(String(c||''));}
+function hasRealComment(r){var c=r&&r.comment;return !!(c&&c.trim().length>1&&!isPlaceholderComment(c));}
 function switchPage(page){
   document.querySelectorAll('.nav-tab').forEach((t,i)=>t.classList.toggle('active',['reports','links','coaching'][i]===page));
   document.querySelectorAll('.page').forEach(p=>{p.classList.toggle('visible',p.id===page);p.style.display=(p.id===page?'block':'none');});
@@ -548,7 +552,7 @@ function srcListHtml(used){
 function clipC(s){s=String(s||'').trim().replace(/\s+/g,' ');return s.length>340?s.slice(0,340)+'\u2026':s;}
 
 async function genDailyAlert(dayRecs){
-  const used=dayRecs.filter(r=>r.comment&&r.comment.trim())
+  const used=dayRecs.filter(r=>hasRealComment(r))
     .map(r=>({label:`${r.teacher} · ${r.course||r.group||r.className||''}`, text:String(r.comment).trim()}));
   if(!used.length)return null;
   const comments=used.map(c=>`${c.label}: "${clipC(c.text)}"`).join('\n');
@@ -561,7 +565,7 @@ async function genDailyAlert(dayRecs){
 }
 
 async function genWeeklyAlert(weekRecs){
-  const used=weekRecs.filter(r=>r.comment&&r.comment.trim()).slice(0,14)
+  const used=weekRecs.filter(r=>hasRealComment(r)).slice(0,14)
     .map(r=>({label:`${r.teacher} · ${r.course||r.group||r.className||''} (${r.date})`, text:String(r.comment).trim()}));
   if(!used.length)return null;
   const comments=used.map(c=>`${c.label}: "${clipC(c.text)}"`).join('\n');
@@ -633,7 +637,7 @@ async function renderDaily(dateStr){
 
   if(abs.length){h+=`<div class="slbl">Absent students</div><div class="card"><ul class="ptr-list">`;abs.forEach(a=>{h+=`<li><i class="ti ti-user-off pi" style="color:#854F0B"></i><span><strong>${a.name}</strong> · ${a.cls} (${a.teacher})</span></li>`;});h+=`</ul></div>`;}
 
-  const wc=dr.filter(r=>r.comment&&r.comment.trim());
+  const wc=dr.filter(r=>hasRealComment(r));
   h+=`<div class="slbl"><span>AI lesson analysis</span>${wc.length?`<button class="gen-btn" id="genDailyBtn" onclick="runDailyAI('${dateStr}')"><i class="ti ti-sparkles"></i> Generate</button>`:'<span style="font-size:10px;color:#bbb">No comments today</span>'}</div><div id="aiLessons"></div>`;
   h+=`<div class="slbl"><span>Head teacher alert</span>${wc.length?`<button class="gen-btn" id="genAlertBtn" onclick="runDailyAlert('${dateStr}')"><i class="ti ti-bell"></i> Generate</button>`:'<span style="font-size:10px;color:#bbb">No comments to analyse</span>'}</div><div id="alertSection"></div>`;
 
@@ -652,7 +656,7 @@ async function runDailyAI(dateStr){
   const el=document.getElementById('aiLessons');
   btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
   el.innerHTML='<div class="spinner">Analysing lesson comments…</div>';
-  const recs=getDateRecs(dateStr).filter(r=>r.comment&&r.comment.trim());
+  const recs=getDateRecs(dateStr).filter(r=>hasRealComment(r));
   const results=await Promise.all(recs.map(r=>genLessonFeedback(r).then(ai=>({r,ai}))));
   let h='';
   results.forEach(({r,ai})=>{
@@ -791,7 +795,7 @@ async function runTeacherAI(name,dateStr){
   btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
   el.innerHTML='<div class="spinner" style="padding:.75rem">Analysing…</div>';
   const{mon,sun}=getWeekRange(new Date(dateStr+'T12:00:00'));
-  const recs=getWeekRecs(mon,sun).filter(r=>r.teacher===name&&r.comment&&r.comment.trim());
+  const recs=getWeekRecs(mon,sun).filter(r=>r.teacher===name&&hasRealComment(r));
   if(!recs.length){el.innerHTML='';btn.disabled=false;btn.innerHTML='<i class="ti ti-sparkles"></i> AI analysis';return;}
   const results=await Promise.all(recs.map(r=>genLessonFeedback(r).then(ai=>({r,ai}))));
   let h=`<hr class="div"><div class="slbl"><span class="note-tag">Admin only</span> AI lesson analysis</div>`;
@@ -894,7 +898,7 @@ function renderDaily(dateStr){
 
   if(abs.length){h+='<div class="slbl">Absent students</div><div class="card"><ul class="ptr-list">';abs.forEach(function(a){h+='<li><i class="ti ti-user-off pi" style="color:#854F0B"></i><span><strong>'+a.name+'</strong> · '+a.cls+' ('+a.teacher+')</span></li>';});h+='</ul></div>';}
 
-  var wc=dr.filter(function(r){return r.comment&&r.comment.trim();});
+  var wc=dr.filter(function(r){return hasRealComment(r);});
   h+='<div class="slbl" style="display:flex;align-items:center;justify-content:space-between"><span>AI lesson analysis</span>'+(wc.length?'<button class="gen-btn" id="genDailyBtn" onclick="runDailyAI(\''+dateStr+'\')"><i class="ti ti-sparkles"></i> Generate</button>':'<span style="font-size:10px;color:#bbb">No comments today</span>')+'</div><div id="aiLessons"></div>';
   h+='<div class="slbl" style="display:flex;align-items:center;justify-content:space-between"><span>Head teacher alert</span>'+(wc.length?'<button class="gen-btn" id="genAlertBtn" onclick="runDailyAlert(\''+dateStr+'\')"><i class="ti ti-bell"></i> Generate</button>':'<span style="font-size:10px;color:#bbb">No comments to analyse</span>')+'</div><div id="alertSection"></div>';
 
@@ -913,7 +917,7 @@ async function runDailyAI(dateStr){
   var el=document.getElementById('aiLessons');
   btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
   el.innerHTML='<div class="spinner">Analysing lesson comments…</div>';
-  var recs=getDateRecs(dateStr).filter(function(r){return r.comment&&r.comment.trim();});
+  var recs=getDateRecs(dateStr).filter(function(r){return hasRealComment(r);});
   var results=await Promise.all(recs.map(function(r){return genLessonFeedback(r).then(function(ai){return {r:r,ai:ai};});}));
   var h='';
   results.forEach(function(x){
@@ -1012,7 +1016,7 @@ async function runTeacherAI(name,dateStr){
   btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
   el.innerHTML='<div class="spinner" style="padding:.75rem">Analysing…</div>';
   var wrange=getWeekRange(new Date(dateStr+'T12:00:00'));
-  var recs=getWeekRecs(wrange.mon,wrange.sun).filter(function(r){return r.teacher===name&&r.comment&&r.comment.trim();});
+  var recs=getWeekRecs(wrange.mon,wrange.sun).filter(function(r){return r.teacher===name&&hasRealComment(r);});
   if(!recs.length){el.innerHTML='';btn.disabled=false;btn.innerHTML='<i class="ti ti-sparkles"></i> AI analysis';return;}
   var results=await Promise.all(recs.map(function(r){return genLessonFeedback(r).then(function(ai){return {r:r,ai:ai};});}));
   var h='<hr class="div"><div class="slbl"><span class="note-tag">Admin only</span> AI lesson analysis</div>';
@@ -1109,7 +1113,7 @@ async function genHeadTeacherItems(weekRecs){
 // One AI call per week, cached. Everything it says has to come from the week's
 // real comments; the attendance line is counted from the data, not generated.
 async function genWeeklyAgenda(weekRecs){
-  const withComments=weekRecs.filter(r=>r.comment&&r.comment.trim());
+  const withComments=weekRecs.filter(r=>hasRealComment(r));
   if(!withComments.length)return null;
   // Comments have grown long over the course. Sending twenty of them in full
   // made the request slow to generate and the connection was being dropped
@@ -1145,7 +1149,7 @@ function renderWeeklyAgenda(ag, weekRecs){
     .forEach(s=>{abs[s.name]=(abs[s.name]||0)+1;}));
   const chase=Object.entries(abs).filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]);
   const nRec=(weekRecs||[]).length;
-  const nCom=(weekRecs||[]).filter(r=>r.comment&&r.comment.trim()).length;
+  const nCom=(weekRecs||[]).filter(r=>hasRealComment(r)).length;
 
   if(!ag){
     let why;

@@ -1038,8 +1038,22 @@ const logState={search:'',editing:null,draft:'',expanded:null,editingStudents:nu
 // John runs the school. He teaches, so his attendance figures count like anyone's,
 // but he is never counted as owing a lesson comment and never gets chased for one.
 const NO_COMMENT_CHASE=['John'];
+// The reminder tool used to write "[Reminder sent — awaiting comment]" into the
+// comment field, which made a chased class look like a commented one — so the
+// teacher was never asked again and the real comment never arrived. Those
+// placeholders count as no comment at all.
+function isPlaceholderComment(c){
+  return /reminder sent|awaiting comment/i.test(String(c||''));
+}
+function hasRealComment(r){
+  const c=r&&r.comment;
+  return !!(c && c.trim().length>1 && !isPlaceholderComment(c));
+}
 function needsComment(r){
-  return r && !r.commentDone && !NO_COMMENT_CHASE.includes(r.teacher);
+  if(!r || NO_COMMENT_CHASE.includes(r.teacher)) return false;
+  // A placeholder is not a comment, whatever the flag on the record says.
+  if(isPlaceholderComment(r.comment)) return true;
+  return !r.commentDone;
 }
 function weekVal(w){
   if(w==null)return null;
@@ -1195,7 +1209,7 @@ function renderLog(){
     if(nNew>0){const s=document.createElement('span');s.style.cssText='background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:20px;font-size:11px;font-weight:700;';s.textContent='+'+nNew;badges.appendChild(s);}
     if(nDrop>0){const s=document.createElement('span');s.style.cssText='background:#fee2e2;color:#b91c1c;padding:2px 6px;border-radius:20px;font-size:11px;font-weight:700;';s.textContent='−'+nDrop;badges.appendChild(s);}
     if(!nA&&!nL)badges.appendChild(ctr('p','✓'));
-    const ci=document.createElement('span');ci.style.cssText='font-size:10px;color:'+(r.commentDone?'#94a3b8':'#d97706')+';margin-left:2px;';ci.textContent=r.commentDone?'💬':'✏️';badges.appendChild(ci);
+    const ci=document.createElement('span');const done=hasRealComment(r);ci.style.cssText='font-size:10px;color:'+(done?'#94a3b8':'#d97706')+';margin-left:2px;';ci.textContent=done?'💬':'✏️';badges.appendChild(ci);
     hdrRow.appendChild(badges);
     hdrRow.onclick=()=>{if(!isEd){logState.expanded=isEx?null:r.id;renderLog();}};
     card.appendChild(hdrRow);
@@ -2764,7 +2778,7 @@ function renderCourse(){
   };
 
   const comments=state.records
-    .filter(r=>r&&r.comment&&r.comment.trim().length>1&&recStamp(r)>=COURSE_START&&!r.isPlanning)
+    .filter(r=>hasRealComment(r)&&recStamp(r)>=COURSE_START&&!r.isPlanning)
     .sort((a,b)=>recStamp(b)-recStamp(a));
 
   // Sub-tabs

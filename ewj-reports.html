@@ -107,6 +107,10 @@ const FB='https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.a
 // This course only. Week 36 of 2026 starts Monday 31 August; anything submitted
 // before then belongs to last course and is never reported on.
 let COURSE_START=new Date(2026,7,31,0,0,0).getTime();
+// "[Reminder sent — awaiting comment]" was written into the comment field by the
+// old reminder tool. It is not a comment and must never be treated as one.
+function isPlaceholderComment(c){return /reminder sent|awaiting comment/i.test(String(c||''));}
+function hasRealComment(r){var c=r&&r.comment;return !!(c&&c.trim().length>1&&!isPlaceholderComment(c));}
 function thisCourse(r){
   if(!r)return false;
   const t=Date.parse(r.submittedAtFull||'')||Number(r.id)||0;
@@ -192,7 +196,7 @@ async function generateLessonFeedback(r){
 }
 
 async function generateDailyAlert(dayRecs){
-  const comments=dayRecs.filter(r=>r.comment&&r.comment.trim()).map(r=>`${r.teacher} · ${r.group||r.className||''}: "${r.comment}"`).join('\n');
+  const comments=dayRecs.filter(r=>hasRealComment(r)).map(r=>`${r.teacher} · ${r.group||r.className||''}: "${r.comment}"`).join('\n');
   if(!comments)return null;
   return callAI(
     `You are a head teacher assistant. Given lesson comments, produce JSON (no markdown) with: "highPriority": [{student,teacher,text}] max 3 urgent items, "positive": [string] max 4 positive developments, "leadershipNote": one sentence of the most important insight today.`,
@@ -201,7 +205,7 @@ async function generateDailyAlert(dayRecs){
 }
 
 async function generateWeeklyAlert(weekRecs){
-  const comments=weekRecs.filter(r=>r.comment&&r.comment.trim()).slice(0,14).map(r=>`${r.teacher} · ${r.group||r.className||''} (${r.date}): "${r.comment}"`).join('\n');
+  const comments=weekRecs.filter(r=>hasRealComment(r)).slice(0,14).map(r=>`${r.teacher} · ${r.group||r.className||''} (${r.date}): "${r.comment}"`).join('\n');
   if(!comments)return null;
   return callAI(
     `You are a head teacher assistant reviewing a full week. Produce JSON (no markdown) with: "weekSummary": 2-sentence pedagogical overview, "highPriority": [{student,teacher,text}] max 3, "positive": [string] max 4, "leadershipNote": one sentence on most important thing to address next week.`,
@@ -257,7 +261,7 @@ async function renderDaily(dateStr){
 
   if(abs.length){h+=`<div class="slbl">Absent students</div><div class="card"><ul class="ptr-list">`;abs.forEach(a=>{h+=`<li><i class="ti ti-user-off pi" style="color:#854F0B"></i><span><strong>${a.name}</strong> · ${a.cls} (${a.teacher})</span></li>`;});h+=`</ul></div>`;}
 
-  const withComments=dr.filter(r=>r.comment&&r.comment.trim());
+  const withComments=dr.filter(r=>hasRealComment(r));
   h+=`<div class="slbl" style="display:flex;align-items:center;justify-content:space-between">
     <span>AI lesson analysis</span>
     ${withComments.length?`<button class="gen-btn" id="genDailyBtn" onclick="runDailyAI('${dateStr}')"><i class="ti ti-sparkles"></i> Generate feedback</button>`:'<span style="font-size:12px;color:#aaa">No comments today</span>'}
@@ -283,7 +287,7 @@ async function runDailyAI(dateStr){
   const el=document.getElementById('aiLessons');
   btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
   el.innerHTML='<div class="spinner">Analysing lesson comments…</div>';
-  const recs=getDateRecs(dateStr).filter(r=>r.comment&&r.comment.trim());
+  const recs=getDateRecs(dateStr).filter(r=>hasRealComment(r));
   const results=await Promise.all(recs.map(r=>generateLessonFeedback(r).then(ai=>({r,ai}))));
   let h='';
   results.forEach(({r,ai})=>{
@@ -429,7 +433,7 @@ async function runTeacherAI(name,dateStr){
   btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Generating…';
   el.innerHTML='<div class="spinner" style="padding:1rem">Analysing…</div>';
   const{mon,sun}=getWeekRange(new Date(dateStr+'T12:00:00'));
-  const recs=getWeekRecs(mon,sun).filter(r=>r.teacher===name&&r.comment&&r.comment.trim());
+  const recs=getWeekRecs(mon,sun).filter(r=>r.teacher===name&&hasRealComment(r));
   if(!recs.length){el.innerHTML='';btn.disabled=false;btn.innerHTML='<i class="ti ti-sparkles"></i> AI analysis';return;}
   const results=await Promise.all(recs.map(r=>generateLessonFeedback(r).then(ai=>({r,ai}))));
   let h=`<hr class="div"><div class="slbl"><span class="note-tag">Admin only</span> AI lesson analysis</div>`;
