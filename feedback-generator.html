@@ -310,6 +310,18 @@ async function generateOne(id) {
 // old reminder tool. It is not a comment and must never be treated as one.
 function isPlaceholderComment(c){return /reminder sent|awaiting comment/i.test(String(c||''));}
 function hasRealComment(r){var c=r&&r.comment;return !!(c&&c.trim().length>1&&!isPlaceholderComment(c));}
+// A PATCH to a record that is not there CREATES it — which is how a reminder
+// sent against a deleted register left behind a stub holding nothing but the
+// nudge fields. Check the register is still there before writing to it.
+async function registerStillExists(fbUrl, id){
+  try{
+    const res = await fetch(fbUrl + '/records/r' + id + '.json?shallow=true', {cache:'no-store'});
+    if(!res.ok) return false;
+    const v = await res.json();
+    return v !== null && v !== undefined;
+  }catch(e){ return false; }
+}
+
 function recStamp(r){
   const n = Number(r && r.id);
   if (n) return n;
@@ -617,13 +629,17 @@ async function sendNudge(recordId, teacher) {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: msgId, from: 'John (admin)', to: teacher, text, sentAt: dateStr + ' ' + timeStr, sentAtFull: now.toISOString(), read: false, adminRead: true, readBy: {}, replies: [], nudge: true })
     });
-    await fetch(fbUrl + '/records/r' + recordId + '.json', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      // Record that the reminder went out, and nothing else. Writing a placeholder
-      // into the comment used to make the register think the class had been
-      // commented on: the teacher stopped being asked and the real comment never came.
-      body: JSON.stringify({ commentDone: false, nudgeSent: true, nudgeSentAt: dateStr + ' ' + timeStr })
-    });
+    if (await registerStillExists(fbUrl, recordId)) {
+      await fetch(fbUrl + '/records/r' + recordId + '.json', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        // Record that the reminder went out, and nothing else. Writing a placeholder
+        // into the comment used to make the register think the class had been
+        // commented on: the teacher stopped being asked and the real comment never came.
+        body: JSON.stringify({ commentDone: false, nudgeSent: true, nudgeSentAt: dateStr + ' ' + timeStr })
+      });
+    } else {
+      log('Reminder sent, but the register for ' + teacher + ' no longer exists — not marking it.');
+    }
     const idx = missingCommentRecs.findIndex(r => String(r.id) === String(recordId));
     if (idx !== -1) missingCommentRecs.splice(idx, 1);
     nudges[recordId] = text;
@@ -662,13 +678,17 @@ async function sendAllNudges() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: msgId, from: 'John (admin)', to: r.teacher, text, sentAt: dateStr + ' ' + timeStr, sentAtFull: now.toISOString(), read: false, adminRead: true, readBy: {}, replies: [], nudge: true })
       });
-      await fetch(fbUrl + '/records/r' + r.id + '.json', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        // Record that the reminder went out, and nothing else. Writing a placeholder
-      // into the comment used to make the register think the class had been
-      // commented on: the teacher stopped being asked and the real comment never came.
-      body: JSON.stringify({ commentDone: false, nudgeSent: true, nudgeSentAt: dateStr + ' ' + timeStr })
-      });
+      if (await registerStillExists(fbUrl, r.id)) {
+        await fetch(fbUrl + '/records/r' + r.id + '.json', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          // Record that the reminder went out, and nothing else. Writing a placeholder
+        // into the comment used to make the register think the class had been
+        // commented on: the teacher stopped being asked and the real comment never came.
+        body: JSON.stringify({ commentDone: false, nudgeSent: true, nudgeSentAt: dateStr + ' ' + timeStr })
+        });
+      } else {
+        log('Reminder sent, but the register for ' + r.teacher + ' · ' + r.course + ' no longer exists — not marking it.');
+      }
       nudges[r.id] = text;
       sent++;
     } catch(e) {
