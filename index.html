@@ -1060,6 +1060,45 @@ function weekVal(w){
   const m=String(w).match(/\d+/);
   return m?Number(m[0]):null;
 }
+// ── What happened with this group last time ───────────────────────────────
+// A teacher writing up a lesson should not be starting from a blank box. This
+// pulls the last couple of weeks for the SAME class — what they wrote, and the
+// feedback John sent back — so the comment continues a thread.
+function previousForSlot(r, howMany){
+  if(!r) return [];
+  const t=recStamp(r);
+  return state.records
+    .filter(x=>x && x.id!==r.id && !x.isPlanning
+      && x.teacher===r.teacher && x.day===r.day && x.time===r.time && x.course===r.course
+      && recStamp(x)<t && hasRealComment(x))
+    .sort((p,q)=>recStamp(q)-recStamp(p))
+    .slice(0, howMany||2);
+}
+function previousPanel(r){
+  const prior=previousForSlot(r,2);
+  if(!prior.length) return null;
+  const box=document.createElement('details');
+  box.style.cssText='background:#fff;border:1px solid #c7d2fe;border-radius:8px;margin-bottom:9px;';
+  box.open=true;
+  const sum=document.createElement('summary');
+  sum.style.cssText='cursor:pointer;padding:7px 11px;font-size:11px;font-weight:700;color:#4f46e5;text-transform:uppercase;letter-spacing:.05em;list-style:none;';
+  sum.textContent='Last time with this group ('+prior.length+')';
+  box.appendChild(sum);
+  prior.forEach(x=>{
+    const fb=(state.feedback&&(state.feedback[x.id]||state.feedback[String(x.id)]))||{};
+    const adminFb=x.adminFeedback||fb.adminFeedback||'';
+    const d=document.createElement('div');
+    d.style.cssText='padding:8px 11px;border-top:1px solid #eef2ff;font-size:12px;line-height:1.55;';
+    d.innerHTML='<div style="font-size:10px;font-weight:700;color:#94a3b8;margin-bottom:3px;">'+escHtml(x.date||'')+' · '+escHtml(x.week||'')+'</div>'
+      +'<div style="color:#334155;">'+escHtml(x.comment)+'</div>'
+      +(adminFb?'<div style="margin-top:5px;padding:6px 9px;background:#eef2ff;border-radius:6px;color:#3730a3;">'
+        +'<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;">John said</span><br>'
+        +escHtml(adminFb)+'</div>':'');
+    box.appendChild(d);
+  });
+  return box;
+}
+
 function renderLog(){
   const wrap=document.getElementById('tab-log');wrap.innerHTML='';
   const at=state.activeTeacher;
@@ -1315,6 +1354,8 @@ function renderLog(){
     if(isEd){
       const ed=document.createElement('div');ed.style.cssText='border-top:1.5px solid #c7d2fe;background:#eef2ff;padding:11px 13px;';
       const edTitle=document.createElement('div');edTitle.style.cssText='font-size:12px;font-weight:700;color:#4f46e5;margin-bottom:7px;';edTitle.textContent='✏️ Comment — '+r.course+' · '+r.day+' '+r.time;ed.appendChild(edTitle);
+      // Show the previous weeks before the empty box, not after it.
+      const prevPanel=previousPanel(r); if(prevPanel) ed.appendChild(prevPanel);
       const ta=document.createElement('textarea');ta.style.cssText='width:100%;padding:8px 11px;border:1.5px solid #c7d2fe;border-radius:8px;outline:none;font-size:13px;font-family:inherit;resize:none;min-height:76px;background:#fff;display:block;margin-bottom:7px;';ta.placeholder='How did the class go?';ta.value=logState.draft;ta.oninput=e=>{logState.draft=e.target.value;};ed.appendChild(ta);
       const chips=document.createElement('div');chips.style.cssText='display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px;';
       CHIPS.forEach(c=>{const cb=document.createElement('button');cb.style.cssText='border:1px solid #c7d2fe;background:#fff;border-radius:20px;padding:3px 9px;font-size:11px;color:#4f46e5;cursor:pointer;font-family:inherit;';cb.textContent=c;cb.onclick=()=>{logState.draft=logState.draft?logState.draft+' · '+c:c;ta.value=logState.draft;};chips.appendChild(cb);});
