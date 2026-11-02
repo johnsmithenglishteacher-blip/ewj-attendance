@@ -1075,7 +1075,10 @@ function previousForSlot(r, howMany){
       && x.day===r.day && x.time===r.time && x.course===r.course
       && recStamp(x)<t && hasRealComment(x))
     .sort((p,q)=>recStamp(q)-recStamp(p))
-    .slice(0, howMany||2);
+    .slice(0, howMany||2)
+    // Take the most recent few, then show them oldest first so reading down the
+    // panel runs forwards in time and ends beside the box being written.
+    .reverse();
 }
 function previousPanel(r){
   const prior=previousForSlot(r,2);
