@@ -1069,7 +1069,10 @@ function previousForSlot(r, howMany){
   const t=recStamp(r);
   return state.records
     .filter(x=>x && x.id!==r.id && !x.isPlanning
-      && x.teacher===r.teacher && x.day===r.day && x.time===r.time && x.course===r.course
+      // Matched on the CLASS, not the teacher: same day, same time, same group.
+      // So a lesson someone covered still shows, and a covering teacher sees
+      // what happened the week before.
+      && x.day===r.day && x.time===r.time && x.course===r.course
       && recStamp(x)<t && hasRealComment(x))
     .sort((p,q)=>recStamp(q)-recStamp(p))
     .slice(0, howMany||2);
@@ -1089,7 +1092,8 @@ function previousPanel(r){
     const adminFb=x.adminFeedback||fb.adminFeedback||'';
     const d=document.createElement('div');
     d.style.cssText='padding:8px 11px;border-top:1px solid #eef2ff;font-size:12px;line-height:1.55;';
-    d.innerHTML='<div style="font-size:10px;font-weight:700;color:#94a3b8;margin-bottom:3px;">'+escHtml(x.date||'')+' · '+escHtml(x.week||'')+'</div>'
+    const by=(x.teacher&&x.teacher!==r.teacher)?' · '+escHtml(x.teacher):'';
+    d.innerHTML='<div style="font-size:10px;font-weight:700;color:#94a3b8;margin-bottom:3px;">'+escHtml(x.date||'')+' · '+escHtml(x.week||'')+by+'</div>'
       +'<div style="color:#334155;">'+escHtml(x.comment)+'</div>'
       +(adminFb?'<div style="margin-top:5px;padding:6px 9px;background:#eef2ff;border-radius:6px;color:#3730a3;">'
         +'<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;">John said</span><br>'
