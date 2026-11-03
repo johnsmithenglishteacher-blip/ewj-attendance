@@ -496,7 +496,57 @@ function showFlash(msg){
   setTimeout(()=>{f.style.display='none';},2500);
 }
 
+// Changing ONE class list used to rewrite the whole timetable from this
+// browser's copy — so a teacher adding a student could silently undo changes
+// made earlier that day on another device. This reads the timetable fresh,
+// changes only the one class, and writes back only that class's student list.
+async function updateSlotStudents(slot, change){
+  try{
+    const res=await Promise.race([
+      fetch(FB_URL+'/schedule.json',{cache:'no-store'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+    ]);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    const live=Array.isArray(data)?data:Object.values(data||{});
+    const idx=live.findIndex(x=>x&&slotKey(x)===slotKey(slot));
+    if(idx<0) throw new Error('that class is no longer on the timetable');
+    const next=change([...(live[idx].students||[])]);
+    await Promise.race([
+      fetch(FB_URL+'/schedule/'+idx+'/students.json',
+        {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(next)}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+    ]);
+    // Keep this device in step without touching anyone else's classes.
+    live[idx]={...live[idx],students:next};
+    state.schedule=live; lsSet('ewj-schedule',live);
+    showFlash('\u2713 Saved');
+    return true;
+  }catch(e){
+    console.warn('Class list update failed:',e.message);
+    showFlash('\u26a0 Class list not saved \u2014 '+e.message);
+    return false;
+  }
+}
 async function saveSchedule(s){state.schedule=s;await fbSet('ewj-schedule',s);showFlash('✓ Saved');}
+
+// Pull the live timetable into this device before a structural change, so a
+// whole-timetable write is never built on a copy that has gone stale while the
+// page sat open and teachers added students.
+async function refreshSchedule(){
+  try{
+    const res=await Promise.race([
+      fetch(FB_URL+'/schedule.json',{cache:'no-store'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+    ]);
+    if(!res.ok) return false;
+    const data=await res.json();
+    const live=Array.isArray(data)?data:Object.values(data||{});
+    if(!live.length) return false;
+    state.schedule=live; lsSet('ewj-schedule',live);
+    return true;
+  }catch(e){ console.warn('Could not refresh the timetable:',e.message); return false; }
+}
 async function saveTeachers(list){TEACHERS=list;lsSet('ewj-teachers',list);await fbSet('ewj-teachers',list);showFlash('✓ Saved');}
 // How many classes on the timetable a teacher still has
 function classCount(t){return state.schedule.filter(s=>s.teacher===t).length;}
@@ -584,7 +634,7 @@ function renderTabBar(){
 // ── Register tab ──────────────────────────────────────────────────────────
 const reg={
   teacher:'', dateVal:todayISO(), slotIdx:null,
-  status:{}, notes:{}, flags:{}, added:[],
+  status:{}, notes:{}, flags:{}, added:[], justToday:{},
   newName:'', submitted:false, editingId:null,
   planningMode:false, planningTime:'', planningNote:''
 };
@@ -609,6 +659,8 @@ function pickSlot(i){
     const st={},fl={},nt={};
     (ex.students||[]).forEach(x=>{st[x.name]=x.status==='dropped'?'absent':x.status;if(x.flag)fl[x.name]=x.flag;if(x.note)nt[x.name]=x.note;});
     reg.status=st;reg.flags=fl;reg.notes=nt;reg.editingId=ex.id;
+    // Someone marked as a visitor stays a visitor when the register is reopened.
+    reg.justToday={};(ex.students||[]).forEach(x=>{if(x&&x.flag==='visitor')reg.justToday[x.name]=true;});
     // "Added" means on this register but not yet in the class list, so the ✕
     // can undo it. Someone already in the group is a normal student, however
     // old a 'new' flag on the record says they are.
@@ -616,7 +668,7 @@ function pickSlot(i){
     reg.added=(ex.students||[]).filter(x=>x.flag==='new'&&roster.indexOf(String(x.name||'').trim().toLowerCase())===-1).map(x=>x.name);
   } else {
     const st={};(s.students||[]).forEach(n=>{st[n]='present';});
-    reg.status=st;reg.flags={};reg.notes={};reg.added=[];reg.editingId=null;
+    reg.status=st;reg.flags={};reg.notes={};reg.added=[];reg.justToday={};reg.editingId=null;
   }
 }
 
@@ -678,11 +730,17 @@ function tidyName(raw){
   }
   return n;
 }
-function addStudent(){
+// A name typed into the register is one of two different things: a student who
+// has joined the group, or someone here for this lesson only (a trial, a
+// make-up, a sibling sitting in). Only the first should end up on the class list.
+function addStudent(scope){
   const name=tidyName(reg.newName);
   const allStu=getAllStu();
   if(!name||allStu.some(x=>x.toLowerCase()===name.toLowerCase()))return;
-  reg.added.push(name);reg.status[name]='present';reg.flags[name]='new';reg.newName='';
+  reg.added.push(name);reg.status[name]='present';reg.newName='';
+  if(scope==='today'){ reg.justToday[name]=true; reg.flags[name]='visitor'; }
+  else { delete reg.justToday[name]; reg.flags[name]='new'; }
+  reg.newName='';
   renderRegister();
 }
 function getAllStu(){
@@ -701,7 +759,9 @@ async function submitReg(){
     students:allStu.map(n=>({name:n,status:reg.flags[n]==='dropped'?'dropped':(reg.status[n]||'present'),note:reg.notes[n]||'',
       // Only write "new" while they really are new, so the badge cannot
       // outlive its two weeks by being stored on every later register.
-      flag:reg.flags[n]==='dropped'?'dropped':((reg.added.indexOf(n)!==-1||isNewStudent(n,reg.dateVal))&&reg.flags[n]==='new'?'new':'')}))};
+      flag:reg.flags[n]==='dropped'?'dropped'
+        :reg.justToday[n]?'visitor'
+        :((reg.added.indexOf(n)!==-1||isNewStudent(n,reg.dateVal))&&reg.flags[n]==='new'?'new':'')}))};
   if(reg.editingId){const ex=state.records.find(r=>r.id===reg.editingId);if(ex){entry.comment=ex.comment;entry.commentDone=ex.commentDone;entry.commentAt=ex.commentAt;}}
   // Update local state immediately — no bulk Firebase write
   if(reg.editingId){
@@ -728,33 +788,21 @@ async function submitReg(){
   // so the class size never grew and the teacher had to add them again the
   // following week. Now they join the group properly on their first register.
   if(reg.added.length){
-    const joining=reg.added.filter(n=>n&&reg.flags[n]!=='dropped');
+    const joining=reg.added.filter(n=>n&&reg.flags[n]!=='dropped'&&!reg.justToday[n]);
     if(joining.length){
-      let joinedAny=false;
-      const withJoiners=state.schedule.map(slot=>{
-        if(slotKey(slot)!==slotKey(s)) return slot;
-        const have=(slot.students||[]).map(x=>String(x).trim().toLowerCase());
-        const toAdd=joining.filter(n=>!have.includes(String(n).trim().toLowerCase()));
-        if(!toAdd.length) return slot;
-        joinedAny=true;
-        return {...slot, students:[...(slot.students||[]), ...toAdd]};
+      await updateSlotStudents(s, current=>{
+        const have=current.map(x=>String(x).trim().toLowerCase());
+        const toAdd=joining.filter(n=>have.indexOf(String(n).trim().toLowerCase())===-1);
+        return current.concat(toAdd);
       });
-      if(joinedAny) await saveSchedule(withJoiners);
     }
   }
 
   // ── Permanent drop: remove dropped students from schedule permanently ──
   const droppedStudents=allStu.filter(n=>reg.flags[n]==='dropped');
   if(droppedStudents.length){
-    let scheduleChanged=false;
-    const newSchedule=state.schedule.map(slot=>{
-      const hadDropped=slot.students&&droppedStudents.some(name=>slot.students.includes(name));
-      if(!hadDropped)return slot;
-      scheduleChanged=true;
-      return{...slot,students:slot.students.filter(n=>!droppedStudents.includes(n))};
-    });
-    if(scheduleChanged){
-      await saveSchedule(newSchedule);
+    {
+      await updateSlotStudents(s, current=>current.filter(n=>droppedStudents.indexOf(n)===-1));
       // Log drop event to Firebase for reporting
       for(const name of droppedStudents){
         const dropRec=state.records.find(r=>r.teacher===s.teacher&&r.day===day&&r.time===s.time&&r.course===s.course&&(r.students||[]).some(st=>st.name===name))||entry;
@@ -984,15 +1032,24 @@ function renderRegister(){
       // sitting on an old register. The ✕ (undo this addition) is separate: it
       // belongs only to someone who is on this register but not yet in the class list.
       const justAdded=reg.added.indexOf(n)!==-1;
-      const isD=f==='dropped',isN=!isD&&isNewStudent(n,reg.dateVal),ta=aMap_[n]||0;
+      const isV=!!reg.justToday[n];
+      const isD=f==='dropped',isN=!isD&&!isV&&isNewStudent(n,reg.dateVal),ta=aMap_[n]||0;
       const row=document.createElement('div');row.className='stu '+(isD?'dropped':s)+(isN?' newstu':'');
       const top=document.createElement('div');top.className='stu-top';
       if(isN){const nb=document.createElement('span');nb.style.cssText='font-size:10px;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:20px;font-weight:700;flex-shrink:0;';nb.textContent='NEW';top.appendChild(nb);}
+      if(isV){const vb=document.createElement('span');vb.style.cssText='font-size:10px;background:#eef2ff;color:#4f46e5;padding:2px 6px;border-radius:20px;font-weight:700;flex-shrink:0;';vb.textContent='TODAY';vb.title='On this register only — not in the group';top.appendChild(vb);}
       const nm=document.createElement('span');nm.className='stu-name';nm.textContent=n;top.appendChild(nm);
       if(ta>0&&!isD){const ab=document.createElement('span');ab.className='absbdg';ab.textContent=ta+'A';top.appendChild(ab);}
       if(isD){const bl=document.createElement('span');bl.style.cssText='font-size:11px;color:#b91c1c;flex-shrink:0;';bl.textContent='left';top.appendChild(bl);}
       const fb=document.createElement('button');fb.className='fb'+(isD?' dropped':justAdded?' newstu':'');fb.style.marginLeft='auto';fb.textContent=isD?'↩':justAdded?'✕':'Drop';
-      fb.onclick=()=>isD||justAdded?clearFlag(n):setFlag(n,'dropped');top.appendChild(fb);
+      fb.onclick=()=>{
+        if(isD||justAdded){clearFlag(n);return;}
+        // Dropping takes them out of the class list for good, so say so.
+        if(!confirm('Remove '+n+' from '+(s.course||'this class')+' permanently?\n\n'
+          +'They come off the class list when you save, so they will not appear next week.\n'
+          +'For a one-off absence use A instead.')) return;
+        setFlag(n,'dropped');
+      };top.appendChild(fb);
       row.appendChild(top);
       const bot=document.createElement('div');bot.className='stu-bot';
       ['p','l','a'].forEach(type=>{
@@ -1022,8 +1079,18 @@ function renderRegister(){
     // Add student
     const addRow=document.createElement('div');addRow.className='add-row';
     const addIn=document.createElement('input');addIn.type='text';addIn.placeholder='Add new student…';addIn.value=reg.newName;
-    addIn.oninput=e=>{reg.newName=e.target.value;};addIn.onkeydown=e=>{if(e.key==='Enter')addStudent();};addRow.appendChild(addIn);
-    const addBtn=document.createElement('button');addBtn.className='add-btn';addBtn.textContent='+ Add';addBtn.onclick=addStudent;addRow.appendChild(addBtn);wrap.appendChild(addRow);
+    addIn.oninput=e=>{reg.newName=e.target.value;};addIn.onkeydown=e=>{if(e.key==='Enter')addStudent('class');};addRow.appendChild(addIn);
+    const addBtn=document.createElement('button');addBtn.className='add-btn';addBtn.textContent='+ Add to group permanently';
+    addBtn.title='Joins the group from now on';addBtn.onclick=()=>addStudent('class');addRow.appendChild(addBtn);
+    const todayBtn=document.createElement('button');todayBtn.className='add-btn';
+    todayBtn.style.cssText='background:#fff;color:#4f46e5;border:1.5px solid #c7d2fe;';
+    todayBtn.textContent='Just today';todayBtn.title='On this register only — does not join the group';
+    todayBtn.onclick=()=>addStudent('today');addRow.appendChild(todayBtn);
+    wrap.appendChild(addRow);
+    const addHint=document.createElement('div');
+    addHint.style.cssText='font-size:11px;color:#94a3b8;margin:-4px 0 10px;line-height:1.5;';
+    addHint.textContent='Add to group permanently = they are in the group from now on. Just today = a trial, a make-up or a visitor, on this register only.';
+    wrap.appendChild(addHint);
 
     // Submit
     const sub=document.createElement('button');sub.className='submit-btn';sub.textContent=(reg.editingId?'Update':'Save')+' register →';sub.onclick=submitReg;wrap.appendChild(sub);
@@ -2007,10 +2074,11 @@ function renderManage(){
             b.textContent=label;return b;};
           const one=mk('Remove from this class','#dc2626','#fff','none');
           one.onclick=async()=>{
-            const ns=state.schedule.map(x=>slotKey(x)===key?{...x,students:(x.students||[]).filter(n=>n!==name)}:x);
             manState.removing=null;
             logRoster('removed',name,s,'class');
-            await saveSchedule(ns);
+            // Only this class's list is written, so a teacher's addition made
+            // since this page loaded is not undone.
+            await updateSlotStudents(s, cur=>cur.filter(n=>n!==name));
             renderManage();renderRegister();
           };
           btns.appendChild(one);
@@ -2045,10 +2113,10 @@ function renderManage(){
         if(!name)return;
         const cur=s.students||[];
         if(cur.some(x=>x.toLowerCase()===name.toLowerCase())){alert(name+' is already in this class.');return;}
-        const ns=state.schedule.map(x=>slotKey(x)===key?{...x,students:[...(x.students||[]),name]}:x);
         delete manState.addName[key];
         logRoster('added',name,s,'class');
-        await saveSchedule(ns);
+        await updateSlotStudents(s, cur=>
+          cur.some(x=>String(x).trim().toLowerCase()===name.toLowerCase())?cur:cur.concat([name]));
         renderManage();renderRegister();
       };
       addIn.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();doAdd();}};
@@ -2066,6 +2134,7 @@ function renderManage(){
         delGroupBtn.textContent='&#128465; Delete this group from timetable';
         delGroupBtn.onclick=async()=>{
           if(!confirm('Delete '+s.teacher+' '+s.day+' '+s.time+' '+s.course+' from the timetable? This cannot be undone.'))return;
+          await refreshSchedule();
           const ns=state.schedule.filter(x=>slotKey(x)!==key);
           await saveSchedule(ns);
           manState.expanded=null;delete manState.pending[key];
@@ -2087,6 +2156,8 @@ function renderManage(){
 }
 
 async function applyManage(){
+  // Build on the live timetable, not on whatever this page loaded earlier.
+  await refreshSchedule();
   let ns=state.schedule.map(s=>({...s,students:[...(s.students||[])]}));
   Object.entries(manState.pending).forEach(([sk,ch])=>{
     const si=ns.findIndex(s=>slotKey(s)===sk);if(si===-1)return;
@@ -2114,7 +2185,45 @@ async function applyManage(){
 // status: 'in' | 'out'
 
 function getHours(){return Array.isArray(state.hours)?state.hours:(lsGet('ewj-hours',[]))}
-async function saveHours(hrs){state.hours=hrs;lsSet('ewj-hours',hrs);await fbSet('ewj-hours',hrs);}
+// Clock-ins used to be saved by writing the WHOLE hours list back to Firebase
+// from one browser's copy. Two teachers clocking in minutes apart meant the
+// second write replaced the first one's entry with a stale list — the clock-in
+// simply vanished. Each entry is now written on its own, like the registers,
+// so one teacher's device can never erase another's hours.
+async function saveHourEntry(entry){
+  if(!entry||!entry.id) return;
+  const hrs=getHours();
+  const idx=hrs.findIndex(x=>x&&x.id===entry.id);
+  if(idx>=0) hrs[idx]=entry; else hrs.push(entry);
+  state.hours=hrs; lsSet('ewj-hours',hrs);
+  try{
+    await Promise.race([
+      fetch(FB_URL+'/hours/h'+entry.id+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(entry)}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000))
+    ]);
+    // Confirm it is in the database before telling anyone it is saved.
+    const check=await fetch(FB_URL+'/hours/h'+entry.id+'.json?shallow=true',{cache:'no-store'});
+    const there=check.ok?await check.json():null;
+    if(there===null||there===undefined) throw new Error('it did not arrive');
+    showFlash('✓ Saved');
+  }catch(e){
+    console.warn('Clock-in save failed:',e.message);
+    showFlash('⚠ NOT SAVED — '+e.message+'. Try again before you leave.');
+  }
+}
+async function deleteHourEntry(id){
+  state.hours=getHours().filter(x=>x&&x.id!==id);
+  lsSet('ewj-hours',state.hours);
+  try{
+    await Promise.race([
+      fetch(FB_URL+'/hours/h'+id+'.json',{method:'DELETE'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000))
+    ]);
+  }catch(e){ console.warn('Delete failed:',e.message); }
+}
+// Kept for anything still handing over a whole list: local only, never a bulk
+// write to Firebase.
+async function saveHours(hrs){state.hours=hrs;lsSet('ewj-hours',hrs);}
 
 function fmtHHMM(d){return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}
 function fmtDateEN(d){return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});}
@@ -2173,13 +2282,13 @@ function renderHours(){
       // Note input
       const noteWrap=document.createElement('div');noteWrap.style.marginBottom='12px';
       const noteIn=document.createElement('input');noteIn.type='text';noteIn.placeholder='Add a note (optional)…';noteIn.value=myActive.note||'';noteIn.style.cssText='width:100%;padding:8px 11px;border:1.5px solid #86efac;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;outline:none;';
-      noteIn.oninput=e=>{const h=getHours();const idx=h.findIndex(x=>x.id===myActive.id);if(idx>=0){h[idx].note=e.target.value;saveHours(h);}};
+      noteIn.oninput=e=>{const h=getHours();const idx=h.findIndex(x=>x.id===myActive.id);if(idx>=0){h[idx].note=e.target.value;saveHourEntry(h[idx]);}};
       noteWrap.appendChild(noteIn);panel.appendChild(noteWrap);
       // Clock out button
       const outBtn=document.createElement('button');outBtn.style.cssText='background:#dc2626;color:#fff;border:none;border-radius:10px;padding:13px 32px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;width:100%;';
       outBtn.textContent='Clock Out';outBtn.onclick=()=>{
         const h=getHours();const idx=h.findIndex(x=>x.id===myActive.id);
-        if(idx>=0){const outTime=new Date();h[idx].clockOut=outTime.toISOString();h[idx].clockOutDisplay=fmtHHMM(outTime);h[idx].status='out';h[idx].hoursWorked=calcDecimal(h[idx].clockIn,h[idx].clockOut);h[idx].duration=calcDuration(h[idx].clockIn,h[idx].clockOut);saveHours(h);}
+        if(idx>=0){const outTime=new Date();h[idx].clockOut=outTime.toISOString();h[idx].clockOutDisplay=fmtHHMM(outTime);h[idx].status='out';h[idx].hoursWorked=calcDecimal(h[idx].clockIn,h[idx].clockOut);h[idx].duration=calcDuration(h[idx].clockIn,h[idx].clockOut);saveHourEntry(h[idx]);}
         renderHours();
       };
       panel.appendChild(outBtn);
@@ -2199,8 +2308,8 @@ function renderHours(){
       const inBtn=document.createElement('button');inBtn.style.cssText='background:#4f46e5;color:#fff;border:none;border-radius:10px;padding:13px 32px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;width:100%;';
       inBtn.textContent='Clock In';inBtn.onclick=()=>{
         const h=getHours();const n=new Date();
-        h.push({id:Date.now(),teacher:at,date:fmtDateEN(n),dateISO:n.toISOString().slice(0,10),clockIn:n.toISOString(),clockInDisplay:fmtHHMM(n),clockOut:null,clockOutDisplay:null,status:'in',hoursWorked:null,duration:null,note:''});
-        saveHours(h);renderHours();
+        const entry={id:Date.now(),teacher:at,date:fmtDateEN(n),dateISO:n.toISOString().slice(0,10),clockIn:n.toISOString(),clockInDisplay:fmtHHMM(n),clockOut:null,clockOutDisplay:null,status:'in',hoursWorked:null,duration:null,note:''};
+        saveHourEntry(entry).then(renderHours);renderHours();
       };
       panel.appendChild(inBtn);
     }
@@ -2315,12 +2424,12 @@ function renderHours(){
               hrs[idx].clockOut=outD.toISOString();hrs[idx].clockOutDisplay=newOut;
               hrs[idx].hoursWorked=calcDecimal(hrs[idx].clockIn,hrs[idx].clockOut);
               hrs[idx].duration=calcDuration(hrs[idx].clockIn,hrs[idx].clockOut);
-              saveHours(hrs);renderHours();
+              saveHourEntry(hrs[idx]);renderHours();
             }
           }
         };
         const delBtn=document.createElement('button');delBtn.style.cssText='border:1.5px solid #fca5a5;background:#fff;border-radius:6px;padding:4px 10px;font-size:11px;font-family:inherit;cursor:pointer;color:#dc2626;';delBtn.textContent='Delete';
-        delBtn.onclick=()=>{if(confirm('Delete this entry?')){const hrs=getHours().filter(x=>x.id!==h.id);saveHours(hrs);renderHours();}};
+        delBtn.onclick=()=>{if(confirm('Delete this entry?')){deleteHourEntry(h.id).then(renderHours);renderHours();}};
         adminRow.appendChild(editBtn);adminRow.appendChild(delBtn);card.appendChild(adminRow);
       }
       wrap.appendChild(card);
@@ -2352,11 +2461,15 @@ function exportHoursCSV(records){
 
 
 // ── Messages tab (threaded conversations) ────────────────────────────────
-async function saveMessages(msgs){
+// Pass the thread(s) that actually changed. Sending every message this browser
+// happens to know about could push an old copy of a thread back over a reply or
+// a read-flag set somewhere else.
+async function saveMessages(msgs, changedOnly){
   acquireWriteLock(); // suppress SSE for 3s
   state.messages=msgs;
   lsSet('ewj-messages', msgs); // local cache immediately
-  const obj={};msgs.forEach(m=>{ if(m&&m.id) obj['m'+m.id]=m; });
+  const toWrite=changedOnly?(Array.isArray(changedOnly)?changedOnly:[changedOnly]):msgs;
+  const obj={};toWrite.forEach(m=>{ if(m&&m.id) obj['m'+m.id]=m; });
   try {
     const t=new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),5000));
     await Promise.race([fetch(FB_URL+'/messages.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}),t]);
@@ -2448,7 +2561,7 @@ function renderMessages(){
     const now=new Date();
     const newMsg={id:Date.now(),from:me,to:toSel.value,text,sentAt:fmtD(now)+' '+fmtT(now),sentAtFull:now.toISOString(),read:false,adminRead:at==='',readBy:{},replies:[]};
     const updated=[...state.messages,newMsg];
-    await saveMessages(updated);msgIn.value='';renderMessages();
+    await saveMessages(updated,newMsg);msgIn.value='';renderMessages();
   };
   compose.appendChild(sendBtn);wrap.appendChild(compose);
 
@@ -2462,6 +2575,7 @@ function renderMessages(){
   // Mark messages as read after 1s
   setTimeout(async()=>{
     let changed=false;
+    const changedIds=[];
     const upd=state.messages.map(m=>{
       if(!canSeeMessage(m))return m;
       let updated={...m,replies:[...(m.replies||[])]};
@@ -2469,14 +2583,17 @@ function renderMessages(){
       else if(at!==''&&m.to===me&&!m.read&&m.from!==me){updated.read=true;changed=true;}
       else if(at!==''&&m.to==='all'&&m.from!==me&&!(m.readBy||{})[me]){updated.readBy={...(m.readBy||{}),[me]:true};changed=true;}
       // Mark unread replies
+      const before=changed;
       updated.replies=updated.replies.map(r=>{
         if(at===''&&!r.adminRead&&r.from!==me){changed=true;return{...r,adminRead:true};}
         if(at!==''&&(r.to===me||r.to==='all')&&!r.read&&r.from!==me){changed=true;return{...r,read:true};}
         return r;
       });
+      if(changed&&changedIds.indexOf(updated.id)===-1) changedIds.push(updated.id);
+      void before;
       return updated;
     });
-    if(changed)await saveMessages(upd);
+    if(changed)await saveMessages(upd,upd.filter(x=>changedIds.indexOf(x.id)!==-1));
   },1500);
 
   visible.forEach(m=>{
@@ -2545,7 +2662,7 @@ function renderMessages(){
         const replyTo=m.to==='all'?'all':(m.from===me?m.to:m.from);
         const newReply={id:Date.now(),from:me,to:replyTo,text,sentAt:fmtD(now)+' '+fmtT(now),read:false,adminRead:at==='',readBy:{}};
         const upd=state.messages.map(x=>x.id===m.id?{...x,replies:[...(x.replies||[]),newReply]}:x);
-        await saveMessages(upd);msgState.replyDraft='';renderMessages();
+        await saveMessages(upd,upd.find(x=>x.id===m.id));msgState.replyDraft='';renderMessages();
       };
       replyBox.appendChild(replyIn);replyBox.appendChild(replyBtn);card.appendChild(replyBox);
 
