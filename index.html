@@ -262,21 +262,118 @@ async function fbDeleteRecord(id){
 
 // Real-time subscription using Firebase Server-Sent Events (SSE)
 // Calls cb(value) whenever data changes on ANY device
+// Firebase's SSE stream does NOT send the whole node on every change. When one
+// entry is written — one clock-in, one class list — it sends {path:"/h123", data:{...}}
+// meaning "this ONE child changed". The old code here ignored `path` entirely and
+// treated that single entry as if it were the whole list, so one teacher clocking
+// in replaced state.hours with the FIELDS of their own entry and every other
+// teacher's hours vanished; writing /schedule/3/students turned the timetable into
+// a list of student names. That is what made last week's changes "revert".
+//
+// So: keep a mirror of the node here, apply each message at the path it names,
+// and hand the callback the rebuilt list.
 function fbSubscribe(k, cb){
   const path=fbPath(k);
   if(!path) return;
+  let mirror=null;   // the node as {childKey: value}, or null until the first message
+  let pending=[];    // child messages that arrived before the first full snapshot
+
+  function toObj(val){
+    if(val===null||val===undefined) return {};
+    if(Array.isArray(val)){ const o={}; val.forEach((v,i)=>{ if(v!==null&&v!==undefined) o[i]=v; }); return o; }
+    if(typeof val==='object') return Object.assign({},val);
+    return {};
+  }
+
+  function emit(){
+    if(mirror===null) return;
+    const arr=[];
+    Object.keys(mirror).forEach(key=>{
+      let x=mirror[key];
+      if(x===null||x===undefined) return;
+      if(typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).length===0) return;
+      // A record that lost its id field gets it back off the key, exactly as fbGet does.
+      if(k==='ewj-records'&&x&&typeof x==='object'&&!x.id){
+        const fromKey=Number(String(key).replace(/^r/,''));
+        if(fromKey) x=Object.assign({},x,{id:fromKey});
+      }
+      arr.push(x);
+    });
+    if(k==='ewj-records') arr.sort((a,b)=>(a.id||0)-(b.id||0));
+    cb(arr);
+  }
+
+  function apply(ev, merge){
+    try {
+      const msg=JSON.parse(ev.data);
+      if(!msg||typeof msg!=='object') return;
+      applyMsg(msg, merge);
+    } catch(err){ console.warn('SSE parse error:', err); }
+  }
+
+  function applyMsg(msg, merge){
+    {
+      const p=String(msg.path==null?'/':msg.path).replace(/^\/+/,'');
+      const data=msg.data;
+      // A message about ONE child before we have the whole node would leave us
+      // holding that child alone. Hold it until the snapshot lands, then replay.
+      if(p!==''&&mirror===null){ if(pending.length<200) pending.push({msg:msg,merge:merge}); return; }
+      if(p===''){
+        // The whole node.
+        if(merge){
+          mirror=mirror||{};
+          const inc=toObj(data);
+          Object.keys(inc).forEach(key=>{ mirror[key]=inc[key]; });
+        } else {
+          mirror=(data===null||data===undefined)?{}:toObj(data);
+        }
+      } else {
+        const parts=p.split('/');
+        const key=parts[0];
+        mirror=mirror||{};
+        if(parts.length===1){
+          // One whole child — one clock-in, one register, one timetable slot.
+          if(merge&&data&&typeof data==='object'&&!Array.isArray(data)){
+            mirror[key]=Object.assign({},mirror[key]||{},data);
+          } else if(data===null||data===undefined){
+            delete mirror[key];
+          } else {
+            mirror[key]=data;
+          }
+        } else {
+          // A field inside one child, e.g. /3/students or /h123/note.
+          const child=Object.assign({},mirror[key]||{});
+          let node=child;
+          for(let i=1;i<parts.length-1;i++){
+            node[parts[i]]=Object.assign({},node[parts[i]]||{});
+            node=node[parts[i]];
+          }
+          const last=parts[parts.length-1];
+          if(data===null||data===undefined) delete node[last]; else node[last]=data;
+          mirror[key]=child;
+        }
+      }
+      if(pending.length&&mirror!==null){
+        const queued=pending; pending=[];
+        queued.forEach(q=>applyMsg(q.msg,q.merge));
+      }
+      emit();
+    }
+  }
+
   try {
     const es = new EventSource(FB_URL+'/'+path+'.json', {withCredentials:false});
-    es.addEventListener('put', e => {
-      try {
-        const msg = JSON.parse(e.data);
-        const val = msg.data;
-        if(val !== null){
-          const arr = Array.isArray(val) ? val : Object.values(val);
-          cb(arr);
-        }
-      } catch(err){ console.warn('SSE parse error:', err); }
-    });
+    // Firebase sends the whole node on connect. If that never arrives, fetch it
+    // ourselves so held-back child messages are not stranded.
+    setTimeout(()=>{
+      if(mirror!==null) return;
+      fetch(FB_URL+'/'+path+'.json',{cache:'no-store'})
+        .then(r=>r.ok?r.json():null)
+        .then(d=>{ if(mirror===null&&d!==null&&d!==undefined){ applyMsg({path:'/',data:d},false); } })
+        .catch(()=>{});
+    }, 4000);
+    es.addEventListener('put',   e => apply(e,false));
+    es.addEventListener('patch', e => apply(e,true));
     es.onerror = () => {
       // SSE reconnects automatically — no action needed
     };
@@ -396,8 +493,15 @@ async function bootFromFirebase(){
     const obj={};deduped.forEach(r=>{if(r&&r.id)obj['r'+r.id]=r;});
     fetch(FB_URL+'/records.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}).then(()=>console.log('Records restored:',deduped.length)).catch(e=>console.warn('Restore failed:',e));
   }
-  state.schedule = Array.isArray(fbSchedule) ? fbSchedule : Object.values(fbSchedule || {});
-  state.hours    = Array.isArray(fbHours)    ? fbHours    : Object.values(fbHours    || {});
+  // The broken live-update code wrote nonsense into this cache on every device
+  // (the fields of one entry, in place of the whole list). Throw out anything
+  // that is not a real class or a real clock-in before it is used or saved back.
+  const onlyClasses = a => (Array.isArray(a)?a:Object.values(a||{})).filter(x=>x&&typeof x==='object'&&(x.course||x.time));
+  const onlyHours   = a => (Array.isArray(a)?a:Object.values(a||{})).filter(x=>x&&typeof x==='object'&&x.teacher&&x.id);
+  state.schedule = onlyClasses(fbSchedule);
+  state.hours    = onlyHours(fbHours);
+  lsSet('ewj-schedule', state.schedule);
+  lsSet('ewj-hours', state.hours);
   const rawMsgs = Array.isArray(fbMessages) ? fbMessages : Object.values(fbMessages || {});
   state.messages = rawMsgs.length ? rawMsgs : lsGet('ewj-messages',[]);
   mergeFeedbackIntoRecords(); // merge feedback into records
@@ -441,7 +545,12 @@ async function bootFromFirebase(){
   }, 30000);
 
   fbSubscribe('ewj-schedule', val => {
-    const arr = Array.isArray(val) ? val : Object.values(val || {});
+    const arr = (Array.isArray(val) ? val : Object.values(val || {}))
+      .filter(x => x && typeof x === 'object' && (x.course || x.time));
+    // Never let the live stream empty the timetable or hand us something that
+    // isn't a list of classes. A belt-and-braces guard: if this ever trips,
+    // the screen keeps what it has instead of going blank.
+    if(!arr.length && (state.schedule||[]).length){ console.warn('Ignored an empty timetable from the live stream'); return; }
     state.schedule = arr;
     lsSet('ewj-schedule', arr);
     if(state.tab==='register'||state.tab==='manage') renderAll();
@@ -468,7 +577,9 @@ async function bootFromFirebase(){
   });
 
   fbSubscribe('ewj-hours', val => {
-    const arr = Array.isArray(val) ? val : Object.values(val || {});
+    const arr = (Array.isArray(val) ? val : Object.values(val || {}))
+      .filter(x => x && typeof x === 'object' && x.teacher && x.id);
+    if(!arr.length && (state.hours||[]).length){ console.warn('Ignored an empty hours list from the live stream'); return; }
     state.hours = arr;
     lsSet('ewj-hours', arr);
     if(state.tab==='hours') renderHours();
@@ -564,7 +675,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v11.0</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v12.0</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
