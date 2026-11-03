@@ -136,8 +136,24 @@ function absents(recs){return recs.flatMap(r=>(r.students||[]).filter(s=>s.statu
 function lates(recs){return recs.flatMap(r=>(r.students||[]).filter(s=>s.status==='late').map(s=>({name:s.name,cls:r.className||r.group||'',teacher:r.teacher})));}
 
 async function fetchFB(path){const r=await fetch(`${FB}/${path}.json`);if(!r.ok)throw new Error('Firebase '+r.status);return r.json();}
+// Every register here is filtered to this course anyway, so there is no reason to
+// download the previous one. A register's name is r + the millisecond it was
+// saved, all the same length, so ordering by name is ordering by date.
+async function fetchCourseRecords(){
+  try{
+    const url=`${FB}/records.json?orderBy=${encodeURIComponent('"$key"')}&startAt=${encodeURIComponent('"r'+COURSE_START+'"')}`;
+    const r=await fetch(url,{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    if(d&&typeof d==='object'&&Object.keys(d).length) return d;
+    throw new Error('nothing came back');
+  }catch(e){
+    console.warn('Could not fetch just this course\u2019s registers ('+e.message+') \u2014 taking all of them.');
+    return await fetchFB('records');
+  }
+}
 async function loadAll(){try{try{const cs=await fetchFB('courseStart');if(typeof cs==='number'&&cs>0)COURSE_START=cs;}catch(e){}
-const[recs,fb,tea]=await Promise.all([fetchFB('records'),fetchFB('feedback'),fetchFB('teachers')]);allRecords=(recs?Object.values(recs):[]).filter(thisCourse);allFeedback=fb?Object.values(fb):[];const tArr=(Array.isArray(tea)?tea:Object.values(tea||{})).filter(t=>typeof t==='string'&&t.trim());if(tArr.length) TEACHERS=tArr;}catch(e){
+const[recs,fb,tea]=await Promise.all([fetchCourseRecords(),fetchFB('feedback'),fetchFB('teachers')]);allRecords=(recs?Object.values(recs):[]).filter(thisCourse);allFeedback=fb?Object.values(fb):[];const tArr=(Array.isArray(tea)?tea:Object.values(tea||{})).filter(t=>typeof t==='string'&&t.trim());if(tArr.length) TEACHERS=tArr;}catch(e){
     allRecords=[];allFeedback=[];
     console.error('Reports load failed:',e);
     const b=document.body;

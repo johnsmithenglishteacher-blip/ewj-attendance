@@ -99,6 +99,17 @@ const DAY_ORDER={Monday:0,Tuesday:1,Wednesday:2,Thursday:3,Friday:4};
 const CHIPS=["Good dynamics","Very engaged","Low engagement","Exam revision needed","Good progress","Homework not done","Technical issues","Topic covered"];
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+// Did this student ever actually turn up? Being marked absent, or being on a
+// class list, is not attending. Used to tell a real drop-out from somebody who
+// enrolled in September and never came to a single lesson.
+function attendedEver(name){
+  if(!name) return false;
+  const want=String(name).trim().toLowerCase();
+  return state.records.some(r=>r&&!r.isPlanning&&(r.students||[]).some(st=>
+    st&&String(st.name||'').trim().toLowerCase()===want
+    && (st.status==='present'||st.status==='late')));
+}
+
 function slotKey(s){return s.teacher+'|'+s.day+'|'+s.time+'|'+s.course;}
 function lvColor(c){
   if(/^KINDER/i.test(c))return{bg:'#e0f2fe',col:'#0369a1'};
@@ -777,6 +788,99 @@ async function saveSchedule(s){state.schedule=s;await fbSet('ewj-schedule',s);sh
 // Pull the live timetable into this device before a structural change, so a
 // whole-timetable write is never built on a copy that has gone stale while the
 // page sat open and teachers added students.
+// Correcting a misspelled name has to reach everywhere at once — the class
+// lists AND every register already saved — or the student turns into two
+// different people, one with the attendance and one with the classes.
+async function renameStudent(oldName,newName,onProgress){
+  const from=String(oldName||'').trim(), to=String(newName||'').trim();
+  const same=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
+  if(!from||!to||same(from,to)) return {ok:false,why:'nothing to change'};
+  const say=m=>{ try{ onProgress&&onProgress(m); }catch(e){} };
+
+  let slotsDone=0, recsDone=0, failed=0;
+
+  // ── the timetable ──
+  say('Reading the timetable\u2026');
+  await refreshSchedule();
+  const live=state.schedule.slice();
+  for(let i=0;i<live.length;i++){
+    const studs=live[i].students||[];
+    if(!studs.some(n=>same(n,from))) continue;
+    // If the corrected name is already in this class, don't list them twice.
+    const next=[];
+    studs.forEach(n=>{
+      const v=same(n,from)?to:n;
+      if(!next.some(x=>same(x,v))) next.push(v);
+    });
+    try{
+      const res=await Promise.race([
+        fetch(FB_URL+'/schedule/'+i+'/students.json',
+          {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(next)}),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+      ]);
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      live[i]={...live[i],students:next};
+      slotsDone++;
+      say('Class lists updated: '+slotsDone);
+    }catch(e){ failed++; console.warn('Rename failed in a class list:',e.message); }
+  }
+  state.schedule=live; lsSet('ewj-schedule',live);
+
+  // ── every register that mentions them ──
+  const touched=state.records.filter(r=>r&&(r.students||[]).some(st=>st&&same(st.name,from)));
+  say('Registers to update: '+touched.length);
+  for(const r of touched){
+    const updated={...r,students:(r.students||[]).map(st=>same(st.name,from)?{...st,name:to}:st)};
+    try{
+      let keys=await recordKeysFor(r.id);
+      if(!keys.length) keys=['r'+r.id];
+      const res=await Promise.race([
+        fetch(FB_URL+'/records/'+keys[0]+'.json',
+          {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(updated)}),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
+      ]);
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      state.records=state.records.map(x=>x.id===r.id?updated:x);
+      recsDone++;
+      if(recsDone%5===0||recsDone===touched.length) say('Registers updated: '+recsDone+' of '+touched.length);
+    }catch(e){ failed++; console.warn('Rename failed in a register:',e.message); }
+  }
+  lsSet('ewj-records',state.records);
+
+  try{ logRoster('renamed',to+' (was '+from+')',null,'all'); }catch(e){}
+  return {ok:failed===0,slots:slotsDone,records:recsDone,failed:failed};
+}
+
+// The reminder tool used to write "[Reminder sent — awaiting comment]" INTO the
+// comment box. The lesson then counted as commented: the teacher was never
+// chased again and the AI wrote feedback about a lesson nobody had described.
+// The tool no longer does this; these clear the ones it already wrote.
+function placeholderRecords(){
+  return state.records.filter(r=>r&&!r.isPlanning&&!isDeletedRecord(r)&&isPlaceholderComment(r.comment));
+}
+async function clearPlaceholderComments(onProgress){
+  const list=placeholderRecords();
+  let done=0, failed=0;
+  for(const r of list){
+    const updated={...r,comment:'',commentDone:false,commentAt:null};
+    try{
+      let keys=await recordKeysFor(r.id);
+      if(!keys.length) keys=['r'+r.id];
+      const res=await Promise.race([
+        fetch(FB_URL+'/records/'+keys[0]+'.json',
+          {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(updated)}),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
+      ]);
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      state.records=state.records.map(x=>x.id===r.id?updated:x);
+      done++;
+    }catch(e){ failed++; console.warn('Could not clear a placeholder:',e.message); }
+    try{ onProgress&&onProgress(done+failed,list.length); }catch(e){}
+  }
+  lsSet('ewj-records',state.records);
+  return {done:done,failed:failed,total:list.length};
+}
+
 async function refreshSchedule(){
   try{
     const res=await Promise.race([
@@ -809,7 +913,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v13.2</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v14.1</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -1462,6 +1566,37 @@ function renderLog(){
       +'so they cannot be shown. Everything else is below.';
     wrap.appendChild(w);
   }
+  // Registers whose comment is really a reminder note, not a teacher's words.
+  if(!at){
+    const ph=placeholderRecords();
+    if(ph.length){
+      const pr=document.createElement('div');
+      pr.style.cssText='background:#fff7ed;border:1.5px solid #fdba74;border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;';
+      const who={};ph.forEach(r=>{who[r.teacher]=(who[r.teacher]||0)+1;});
+      const whoTxt=Object.keys(who).sort().map(k=>k+' \u00d7'+who[k]).join(', ');
+      const m=document.createElement('div');
+      m.style.cssText='font-size:12.5px;color:#9a3412;line-height:1.5;';
+      m.innerHTML='<strong>'+ph.length+' register'+(ph.length===1?' has':'s have')+' a reminder note instead of a comment</strong> ('
+        +escHtml(whoTxt)+'). The teacher was never chased for '+(ph.length===1?'it':'them')+'.';
+      const b=document.createElement('button');
+      b.style.cssText='background:#ea580c;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;';
+      b.textContent='Clear them';
+      b.onclick=async()=>{
+        const list=placeholderRecords();
+        const preview=list.slice(0,8).map(r=>'\u00b7 '+r.teacher+'  '+r.course+'  '+r.date).join('\n');
+        if(!confirm('Empty the comment on '+list.length+' register'+(list.length===1?'':'s')+'?\n\n'+preview
+          +(list.length>8?'\n\u2026and '+(list.length-8)+' more':'')
+          +'\n\nThey go back to \u201cwaiting for a comment\u201d so the teachers are asked again.')) return;
+        b.disabled=true;b.style.opacity='.6';
+        const res=await clearPlaceholderComments((n,t)=>{b.textContent='Clearing '+n+'/'+t+'\u2026';});
+        showFlash(res.failed?('\u26a0 Cleared '+res.done+' of '+res.total):('\u2713 Cleared '+res.done));
+        renderLog();renderTabBar();
+      };
+      pr.appendChild(m);pr.appendChild(b);
+      wrap.appendChild(pr);
+    }
+  }
+
   const pending=state.records.filter(r=>needsComment(r)&&(!at||r.teacher===at)).length;
 
   // Search + header
@@ -2044,7 +2179,7 @@ function renderDashboard(){
 }
 
 // ── Manage tab ────────────────────────────────────────────────────────────
-const manState={fT:'',fD:'',expanded:null,pending:{},savedMsg:'',creating:false,newGroup:null,addName:{},stuQ:'',stuFocus:false,teachersOpen:false,newTeacher:'',removing:null};
+const manState={fT:'',fD:'',expanded:null,pending:{},savedMsg:'',creating:false,newGroup:null,addName:{},stuQ:'',stuFocus:false,teachersOpen:false,newTeacher:'',removing:null,renaming:null};
 function escHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 function renderManage(){
@@ -2314,9 +2449,57 @@ function renderManage(){
           rm.style.cssText='border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:6px;width:24px;height:24px;line-height:1;font-size:14px;font-family:inherit;cursor:pointer;flex-shrink:0;padding:0;';
           rm.textContent='×';
           rm.onclick=()=>{manState.removing=(manState.removing===name+'␟'+key)?null:name+'␟'+key;renderManage();};
+          const ren=document.createElement('button');
+          ren.title='Correct '+name+"'s name";
+          ren.style.cssText='border:1px solid #c7d2fe;background:#fff;color:#4f46e5;border-radius:6px;width:24px;height:24px;line-height:1;font-size:12px;font-family:inherit;cursor:pointer;flex-shrink:0;padding:0;';
+          ren.textContent='✎';
+          ren.onclick=()=>{manState.renaming=(manState.renaming===name)?null:name;manState.removing=null;renderManage();};
+          row.appendChild(ren);
           row.appendChild(rm);
         }
         body.appendChild(row);
+
+        // Rename panel, opened by the pencil above
+        if(!state.activeTeacher&&manState.renaming===name){
+          const rp=document.createElement('div');
+          rp.style.cssText='background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:9px;padding:11px 13px;margin:6px 0 10px;';
+          const inAll=state.schedule.filter(x=>(x.students||[]).some(n=>String(n).trim().toLowerCase()===name.trim().toLowerCase()));
+          const inRecs=state.records.filter(r=>r&&(r.students||[]).some(st=>st&&String(st.name||'').trim().toLowerCase()===name.trim().toLowerCase()));
+          rp.innerHTML='<div style="font-size:13px;font-weight:700;color:#3730a3;margin-bottom:3px;">Correct this name</div>'
+            +'<div style="font-size:12px;color:#4f46e5;line-height:1.5;">Changes it in '+inAll.length+' class list'+(inAll.length===1?'':'s')
+            +' and '+inRecs.length+' register'+(inRecs.length===1?'':'s')+', so their attendance stays with them.</div>';
+          const inp=document.createElement('input');
+          inp.type='text';inp.value=name;
+          inp.style.cssText='width:100%;margin-top:9px;padding:8px 11px;border:1.5px solid #c7d2fe;border-radius:8px;font-size:13px;font-family:inherit;outline:none;';
+          rp.appendChild(inp);
+          const prog=document.createElement('div');
+          prog.style.cssText='font-size:11.5px;color:#4f46e5;margin-top:7px;min-height:15px;';
+          rp.appendChild(prog);
+          const rbtns=document.createElement('div');rbtns.style.cssText='display:flex;gap:7px;margin-top:9px;flex-wrap:wrap;';
+          const go=document.createElement('button');
+          go.style.cssText='background:#4f46e5;color:#fff;border:none;border-radius:8px;padding:8px 15px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;';
+          go.textContent='Save the correction';
+          go.onclick=async()=>{
+            const to=inp.value.trim();
+            if(!to||to.toLowerCase()===name.trim().toLowerCase()){prog.textContent='Type the corrected spelling first.';return;}
+            if(!confirm('Change \u201c'+name+'\u201d to \u201c'+to+'\u201d everywhere?')) return;
+            go.disabled=true;go.style.opacity='.6';inp.disabled=true;
+            const res=await renameStudent(name,to,m=>{prog.textContent=m;});
+            if(res.ok){
+              showFlash('\u2713 Renamed in '+res.slots+' class list'+(res.slots===1?'':'s')+' and '+res.records+' register'+(res.records===1?'':'s'));
+              manState.renaming=null;renderManage();renderRegister();renderLog&&renderLog();
+            } else {
+              prog.textContent=res.why?('Nothing to change \u2014 '+res.why):(res.failed+' could not be saved. Press again to retry the rest.');
+              go.disabled=false;go.style.opacity='1';inp.disabled=false;
+            }
+          };
+          const nope=document.createElement('button');
+          nope.style.cssText='background:#fff;color:#4f46e5;border:1.5px solid #c7d2fe;border-radius:8px;padding:8px 15px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;';
+          nope.textContent='Cancel';
+          nope.onclick=()=>{manState.renaming=null;renderManage();};
+          rbtns.appendChild(go);rbtns.appendChild(nope);rp.appendChild(rbtns);
+          body.appendChild(rp);
+        }
 
         // Confirmation panel, opened by the × above
         if(manState.removing===name+'␟'+key){
@@ -3327,10 +3510,13 @@ function renderCourse(){
   // Work out who joined and who left, by comparing the timetable as imported at
   // the start of the course against the groups as they stand now.
   const base=rosterMap(BASE_SCHEDULE), now=rosterMap(state.schedule);
-  const joined=[],left=[],moved=[];
+  const joined=[],left=[],neverStarted=[],moved=[];
   Object.keys(now).forEach(k=>{ if(!base[k]) joined.push(now[k]); });
   Object.keys(base).forEach(k=>{
-    if(!now[k]) left.push(base[k]);
+    // Somebody on the starting list who is in no class now has either left the
+    // course or never turned up in the first place. Those are not the same
+    // thing, and counting the second as a drop-out overstates how many we lose.
+    if(!now[k]) (attendedEver(base[k].name)?left:neverStarted).push(base[k]);
     else {
       const a=base[k].classes.slice().sort().join('|'), b=now[k].classes.slice().sort().join('|');
       if(a!==b) moved.push({name:now[k].name,from:base[k].classes,to:now[k].classes});
@@ -3351,7 +3537,8 @@ function renderCourse(){
   const sub=document.createElement('div');
   sub.style.cssText='display:flex;gap:7px;margin-bottom:11px;flex-wrap:wrap;';
   [['comments','Comments ('+comments.length+')'],['joined','New students ('+joined.length+')'],
-   ['left','Drop-outs ('+left.length+')'],['moved','Changed class ('+moved.length+')']].forEach(([id,label])=>{
+   ['left','Drop-outs ('+left.length+')'],['never','Never started ('+neverStarted.length+')'],
+   ['moved','Changed class ('+moved.length+')']].forEach(([id,label])=>{
     const b=document.createElement('button');
     const on=courseState.sub===id;
     b.style.cssText='border:1.5px solid '+(on?'#4f46e5':'#e2e8f0')+';background:'+(on?'#4f46e5':'#fff')+';color:'+(on?'#fff':'#475569')
@@ -3423,9 +3610,20 @@ function renderCourse(){
       .forEach(p=>body.appendChild(personCard(p.name,p.classes,evFor(p.name,'added'),'#bbf7d0')));
   }
   if(courseState.sub==='left'){
-    if(!left.length)body.appendChild(empty('Nobody has left since the course started.'));
+    if(!left.length)body.appendChild(empty('Nobody who started the course has left.'));
     else left.sort((a,b)=>a.name.localeCompare(b.name))
       .forEach(p=>body.appendChild(personCard(p.name,p.classes.map(c=>'was in '+c),evFor(p.name,'removed'),'#fecaca')));
+  }
+  if(courseState.sub==='never'){
+    if(!neverStarted.length)body.appendChild(empty('Everybody on the September list came to at least one lesson.'));
+    else {
+      const intro=document.createElement('div');
+      intro.style.cssText='font-size:12.5px;color:#64748b;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:9px;padding:10px 12px;margin-bottom:10px;line-height:1.55;';
+      intro.textContent='On the timetable in September but never present at a single lesson. These are not drop-outs \u2014 they never began \u2014 so they are kept out of the drop-out figure.';
+      body.appendChild(intro);
+      neverStarted.sort((a,b)=>a.name.localeCompare(b.name))
+        .forEach(p=>body.appendChild(personCard(p.name,p.classes.map(c=>'was listed in '+c),evFor(p.name,'removed'),'#e2e8f0')));
+    }
   }
   if(courseState.sub==='moved'){
     if(!moved.length)body.appendChild(empty('No class changes since the course started.'));

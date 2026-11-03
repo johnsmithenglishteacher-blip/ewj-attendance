@@ -69,6 +69,7 @@
 </div>
 
 <div id="log">Ready. Load records to begin.</div>
+<div id="loadAllHolder" style="margin:-6px 0 14px;"></div>
 
 <div id="statsDiv" style="display:none">
   <div class="stats" id="statsEl"></div>
@@ -104,6 +105,10 @@
 // CONFIG — also editable in the UI above
 // ═══════════════════════════════════════
 const DEFAULT_FB_URL = 'https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
+// How much history this page pulls down. Eight weeks covers this week's comments
+// and the two previous weeks the feedback builds on, with room to spare.
+const WEEKS_BACK = 8;
+let LOAD_ALL = false;
 const PROXY_URL = 'https://api.anthropic.com/v1/messages';
 
 // The database address is fixed. The box on the page is display-only: a browser
@@ -144,12 +149,22 @@ async function loadRecords() {
         () => rej(new Error('no reply after ' + seconds + ' seconds')), seconds * 1000))
     ]);
 
-    // The registers are essential — without them there is nothing to show.
+    // Only the recent registers, unless the whole course is asked for. A register's
+    // name in the database is r + the millisecond it was saved, and they are all the
+    // same length, so ordering by name is ordering by date. Eight weeks instead of
+    // the whole course is the difference between a page that opens and one that
+    // sits there, especially on a phone.
+    const windowMs = LOAD_ALL ? 0 : (Date.now() - WEEKS_BACK * 7 * 86400000);
+    const recUrl = windowMs
+      ? FB_URL() + '/records.json?orderBy=' + encodeURIComponent('"$key"')
+        + '&startAt=' + encodeURIComponent('"r' + windowMs + '"')
+      : FB_URL() + '/records.json';
+    log(windowMs ? ('Loading the last ' + WEEKS_BACK + ' weeks …') : 'Loading the whole course …');
     let rRes;
-    try { rRes = await get(FB_URL() + '/records.json', 30); }
+    try { rRes = await get(recUrl, 30); }
     catch(e) {
       throw new Error('Could not read the registers — ' + e.message + '.\n\n'
-        + 'Address: ' + FB_URL() + '/records.json\n\n'
+        + 'Address: ' + recUrl + '\n\n'
         + 'If the Attendance Register itself works on this computer, the database is fine and '
         + 'something in this browser is stopping this page. An ad-blocking or privacy extension '
         + 'is the usual cause — try a Private window.');
@@ -170,7 +185,16 @@ async function loadRecords() {
       console.warn('feedback.json unavailable:', e.message);
     }
 
-    const allRecs = rData ? (Array.isArray(rData) ? rData : Object.values(rData)).filter(r => r && r.teacher && !r.isPlanning) : [];
+    let rDataUsed = rData;
+    // A database that will not sort by name, or a course whose oldest registers
+    // still sit under plain numbers, would come back empty. Take the lot rather
+    // than show nothing.
+    if (windowMs && (!rDataUsed || !Object.keys(rDataUsed).length)) {
+      log('The database would not hand over just the recent ones — loading all of them.');
+      const allRes = await get(FB_URL() + '/records.json', 45);
+      if (allRes.ok) rDataUsed = await allRes.json();
+    }
+    const allRecs = rDataUsed ? (Array.isArray(rDataUsed) ? rDataUsed : Object.values(rDataUsed)).filter(r => r && r.teacher && !r.isPlanning) : [];
     records = allRecs.filter(hasRealComment);
     // John is the CEO, not someone to chase for lesson comments — he is never listed
     // as missing one and never receives a reminder.
@@ -186,6 +210,23 @@ async function loadRecords() {
     });
 
     log('Loaded ' + records.length + ' records with comments. ' + Object.keys(feedback).length + ' already have feedback.');
+    // Say plainly that this is a window, and offer the rest in one click — older
+    // lessons must never go missing without a word.
+    if (windowMs) {
+      log('That is the last ' + WEEKS_BACK + ' weeks only. Anything older is not on this page yet.');
+      const holder = document.getElementById('loadAllHolder');
+      if (holder) {
+        holder.innerHTML = '';
+        const b = document.createElement('button');
+        b.textContent = '\u21ba Load the whole course instead';
+        b.style.cssText = 'border:1.5px solid #c7d2fe;background:#fff;color:#4f46e5;border-radius:8px;padding:7px 14px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;';
+        b.onclick = () => { LOAD_ALL = true; b.disabled = true; b.textContent = 'Loading the whole course\u2026'; loadRecords(); };
+        holder.appendChild(b);
+      }
+    } else {
+      const holder = document.getElementById('loadAllHolder');
+      if (holder) holder.innerHTML = '<span style="font-size:12px;color:#94a3b8;">Showing the whole course.</span>';
+    }
 
     const teachers = [...new Set(records.map(r => r.teacher))].sort();
     const tSel = document.getElementById('filterTeacher');
