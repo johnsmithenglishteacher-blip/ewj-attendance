@@ -785,7 +785,8 @@ async function refreshSchedule(){
     ]);
     if(!res.ok) return false;
     const data=await res.json();
-    const live=Array.isArray(data)?data:Object.values(data||{});
+    const live=(Array.isArray(data)?data:Object.values(data||{}))
+      .filter(x=>x&&typeof x==='object'&&(x.course||x.time));
     if(!live.length) return false;
     state.schedule=live; lsSet('ewj-schedule',live);
     return true;
@@ -808,7 +809,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v13.0</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v13.2</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -996,6 +997,22 @@ async function submitReg(){
   const now=new Date();
   const s=getSlots()[reg.slotIdx];
   const day=getDay(reg.dateVal),dateStr=getDateStr(reg.dateVal),week=getWeek(reg.dateVal);
+
+  // Saving twice used to make two registers for the same lesson — the pair of
+  // Mary / FCE INT registers a minute apart with different absences. A lesson
+  // happens once, so offer to update the one that is already there.
+  if(!reg.editingId){
+    const twin=state.records.find(r=>r&&!r.isPlanning&&!isDeletedRecord(r)
+      &&r.teacher===s.teacher&&r.day===day&&r.time===s.time&&r.course===s.course&&r.date===dateStr);
+    if(twin){
+      const when=twin.submittedAt?(' at '+twin.submittedAt):'';
+      if(!confirm('There is already a register for '+s.course+' on '+dateStr+', saved'+when+'.\n\n'
+        +'OK \u2014 update that register with what is on the screen now. Any comment on it is kept.\n'
+        +'Cancel \u2014 leave it alone and go back.')) return;
+      reg.editingId=twin.id;
+    }
+  }
+
   const allStu=getAllStu();
   const entry={id:reg.editingId||Date.now(),teacher:s.teacher,day,time:s.time,course:s.course,
     week:'Week '+week,date:dateStr,submittedAt:fmtT(now),submittedAtFull:now.toISOString(),
@@ -2093,7 +2110,8 @@ function renderManage(){
         // A teacher is in one room per slot, so copy the room from their other class at this day and time.
         const sib=state.schedule.find(s=>s.teacher===g.teacher&&s.day===g.day&&s.time===g.time&&s.room);
         if(sib){newSlot.room=sib.room;newSlot.capacity=sib.capacity;}
-        // Check for duplicate
+        // Build on the live timetable, not on whatever this page loaded earlier.
+        await refreshSchedule();
         const key=s=>s.teacher+'|'+s.day+'|'+s.time+'|'+s.course;
         if(state.schedule.some(s=>key(s)===key(newSlot))){alert('A group with this teacher, day, time and course already exists.');return;}
         const ns=[...state.schedule,newSlot];
@@ -2329,6 +2347,7 @@ function renderManage(){
           if(others.length){
             const all=mk('Remove from all '+(others.length+1)+' classes','#991b1b','#fff','none');
             all.onclick=async()=>{
+              await refreshSchedule();
               const ns=state.schedule.map(x=>({...x,students:(x.students||[]).filter(n=>n!==name)}));
               manState.removing=null;
               logRoster('removed',name,s,'all');
@@ -2553,7 +2572,28 @@ function calcDecimal(inISO,outISO){
 
 const hoursState={filterTeacher:'',filterMonth:'',view:'my'}; // view: 'my'|'all'
 
+// The running clock used to start a new timer on every redraw and never stop
+// the old one. Switching teacher left several timers alive at once, each still
+// counting from a DIFFERENT teacher's clock-in and all writing to the same
+// number — so the time appeared to jump about at random. One timer only, and
+// it reads who is active now instead of remembering who was active then.
+let hoursTicker=null;
+function stopHoursTicker(){ if(hoursTicker){clearInterval(hoursTicker);hoursTicker=null;} }
+function startHoursTicker(){
+  stopHoursTicker();
+  hoursTicker=setInterval(()=>{
+    const disp=document.getElementById('elapsed-display');
+    if(!disp){ stopHoursTicker(); return; }
+    const who=state.activeTeacher;
+    const live=who?openSessionsFor(who)[0]:null;
+    if(!live){ stopHoursTicker(); renderHours(); return; }
+    const mins=Math.round((new Date()-new Date(live.clockIn))/1000/60);
+    disp.textContent=Math.floor(mins/60)+'h '+String(mins%60).padStart(2,'0')+'m';
+  },30000);
+}
+
 function renderHours(){
+  stopHoursTicker();   // never leave a previous teacher's clock running
   const wrap=document.getElementById('tab-hours');wrap.innerHTML='';
   const at=state.activeTeacher;
   // Change PIN button (admin only)
@@ -2623,13 +2663,7 @@ function renderHours(){
         renderHours();
       };
       panel.appendChild(outBtn);
-      // Live clock update
-      const ticker=setInterval(()=>{
-        const disp=document.getElementById('elapsed-display');
-        if(!disp){clearInterval(ticker);return;}
-        const el2=Math.round((new Date()-new Date(myActive.clockIn))/1000/60);
-        disp.textContent=Math.floor(el2/60)+'h '+String(el2%60).padStart(2,'0')+'m';
-      },30000);
+      startHoursTicker();
     } else {
       // Not clocked in
       panel.style.cssText='background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:20px;text-align:center;margin-bottom:16px;';
