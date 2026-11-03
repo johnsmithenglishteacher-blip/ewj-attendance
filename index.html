@@ -675,7 +675,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v12.0</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v12.1</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -2296,6 +2296,28 @@ async function applyManage(){
 // status: 'in' | 'out'
 
 function getHours(){return Array.isArray(state.hours)?state.hours:(lsGet('ewj-hours',[]))}
+
+// Every session this teacher still has open, earliest clock-in first.
+function openSessionsFor(teacher){
+  if(!teacher) return [];
+  return getHours()
+    .filter(h=>h&&h.teacher===teacher&&h.status==='in')
+    .sort((a,b)=>(Date.parse(a.clockIn)||0)-(Date.parse(b.clockIn)||0));
+}
+
+// Sessions the old broken screen created twice over: same teacher, same minute
+// in, same minute out. Returns the ones that should go, keeping one of each.
+function duplicateSessions(){
+  const seen={}, dupes=[];
+  getHours().slice()
+    .sort((a,b)=>(a.id||0)-(b.id||0))
+    .forEach(h=>{
+      if(!h||!h.teacher) return;
+      const key=[h.teacher,String(h.clockIn||'').slice(0,16),String(h.clockOut||'').slice(0,16)].join('|');
+      if(seen[key]) dupes.push(h); else seen[key]=true;
+    });
+  return dupes;
+}
 // Clock-ins used to be saved by writing the WHOLE hours list back to Firebase
 // from one browser's copy. Two teachers clocking in minutes apart meant the
 // second write replaced the first one's entry with a stale list — the clock-in
@@ -2398,8 +2420,26 @@ function renderHours(){
       // Clock out button
       const outBtn=document.createElement('button');outBtn.style.cssText='background:#dc2626;color:#fff;border:none;border-radius:10px;padding:13px 32px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;width:100%;';
       outBtn.textContent='Clock Out';outBtn.onclick=()=>{
-        const h=getHours();const idx=h.findIndex(x=>x.id===myActive.id);
-        if(idx>=0){const outTime=new Date();h[idx].clockOut=outTime.toISOString();h[idx].clockOutDisplay=fmtHHMM(outTime);h[idx].status='out';h[idx].hoursWorked=calcDecimal(h[idx].clockIn,h[idx].clockOut);h[idx].duration=calcDuration(h[idx].clockIn,h[idx].clockOut);saveHourEntry(h[idx]);}
+        outBtn.disabled=true; outBtn.style.opacity='.6'; outBtn.textContent='Saving…';
+        const open=openSessionsFor(at);
+        const outTime=new Date();
+        // The real session is the earliest one still open. Any others are
+        // repeat presses of Clock In and are thrown away, not counted as work.
+        const keep=open[0];
+        const jobs=[];
+        if(keep){
+          const h=getHours();const idx=h.findIndex(x=>x.id===keep.id);
+          if(idx>=0){
+            h[idx].clockOut=outTime.toISOString();
+            h[idx].clockOutDisplay=fmtHHMM(outTime);
+            h[idx].status='out';
+            h[idx].hoursWorked=calcDecimal(h[idx].clockIn,h[idx].clockOut);
+            h[idx].duration=calcDuration(h[idx].clockIn,h[idx].clockOut);
+            jobs.push(saveHourEntry(h[idx]));
+          }
+        }
+        open.slice(1).forEach(dup=>{ jobs.push(deleteHourEntry(dup.id)); });
+        Promise.all(jobs).then(renderHours).catch(()=>renderHours());
         renderHours();
       };
       panel.appendChild(outBtn);
@@ -2418,9 +2458,15 @@ function renderHours(){
         +'<div style="font-size:13px;color:#64748b;margin-bottom:14px;">'+fmtDateEN(now)+' · '+fmtHHMM(now)+'</div>';
       const inBtn=document.createElement('button');inBtn.style.cssText='background:#4f46e5;color:#fff;border:none;border-radius:10px;padding:13px 32px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;width:100%;';
       inBtn.textContent='Clock In';inBtn.onclick=()=>{
-        const h=getHours();const n=new Date();
+        // One open session per teacher, full stop. While the screen was not
+        // updating, a teacher pressing Clock In again opened a second, a third...
+        // and then each Clock Out only closed one of them.
+        if(openSessionsFor(at).length){ renderHours(); return; }
+        inBtn.disabled=true; inBtn.style.opacity='.6'; inBtn.textContent='Saving…';
+        const n=new Date();
         const entry={id:Date.now(),teacher:at,date:fmtDateEN(n),dateISO:n.toISOString().slice(0,10),clockIn:n.toISOString(),clockInDisplay:fmtHHMM(n),clockOut:null,clockOutDisplay:null,status:'in',hoursWorked:null,duration:null,note:''};
-        saveHourEntry(entry).then(renderHours);renderHours();
+        saveHourEntry(entry).then(renderHours).catch(()=>renderHours());
+        renderHours();
       };
       panel.appendChild(inBtn);
     }
@@ -2450,6 +2496,32 @@ function renderHours(){
     });
   }
   wrap.appendChild(viewToggle);
+
+  // The broken screen let a teacher press Clock In several times over. Offer to
+  // clear the repeats, but never delete anyone's hours without being asked.
+  const dupes=duplicateSessions();
+  if(dupes.length){
+    const dRow=document.createElement('div');
+    dRow.style.cssText='background:#fff7ed;border:1.5px solid #fdba74;border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;';
+    const msg=document.createElement('div');
+    msg.style.cssText='font-size:12.5px;color:#9a3412;';
+    msg.innerHTML='<strong>'+dupes.length+' repeated '+(dupes.length===1?'session':'sessions')+'</strong> — the same clock-in saved more than once.';
+    const dBtn=document.createElement('button');
+    dBtn.style.cssText='background:#ea580c;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;';
+    dBtn.textContent='Remove the repeats';
+    dBtn.onclick=()=>{
+      const list=duplicateSessions();
+      if(!list.length){renderHours();return;}
+      const preview=list.slice(0,6).map(h=>'· '+h.teacher+'  '+(h.clockInDisplay||'')+(h.clockOutDisplay?' \u2192 '+h.clockOutDisplay:' (still open)')+'  '+(h.date||'')).join('\n');
+      if(!confirm('Remove '+list.length+' repeated '+(list.length===1?'session':'sessions')+'?\n\n'+preview+(list.length>6?'\n\u2026and '+(list.length-6)+' more':'')+'\n\nOne of each is kept. This cannot be undone.')) return;
+      dBtn.disabled=true;dBtn.style.opacity='.6';dBtn.textContent='Removing\u2026';
+      Promise.all(list.map(h=>deleteHourEntry(h.id)))
+        .then(()=>{showFlash('\u2713 Removed '+list.length);renderHours();})
+        .catch(()=>{showFlash('\u26a0 Some could not be removed \u2014 try again');renderHours();});
+    };
+    dRow.appendChild(msg);dRow.appendChild(dBtn);
+    wrap.appendChild(dRow);
+  }
 
   // Filters
   const filterRow=document.createElement('div');filterRow.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;';
