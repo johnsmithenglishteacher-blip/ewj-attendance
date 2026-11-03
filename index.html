@@ -174,6 +174,76 @@ let COURSE_START = COURSE_START_DEFAULT;
 // Firebase — whichever device is still holding a copy of it, and whichever version
 // of this app that device happens to be running.
 let CLEARED_AT = 0;
+
+// Registers deleted one by one. Removing a register from the database is not
+// enough on its own: another device still holding it in its cache re-uploads it
+// the next time it writes, and the deleted lesson quietly comes back. So every
+// deletion is also recorded here, and a register on this list is never shown,
+// never cached and never uploaded again by any device.
+let DELETED_IDS = {};
+function isDeletedRecord(r){
+  if(!r) return false;
+  return !!DELETED_IDS[String(r.id)];
+}
+async function loadDeletedIds(){
+  try{
+    const res=await Promise.race([
+      fetch(FB_URL+'/deletedRecords.json',{cache:'no-store'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+    ]);
+    if(!res.ok) return;
+    const d=await res.json();
+    if(d&&typeof d==='object'){
+      const next={};
+      Object.keys(d).forEach(k=>{ next[String(k).replace(/^r/,'')]=d[k]; });
+      DELETED_IDS=next;
+    }
+  }catch(e){ console.warn('Could not read the deleted list:',e.message); }
+}
+
+// The oldest registers and clock-ins sit under plain numbers (0, 1, 2 …) from
+// when each list was one big array, while everything written since goes under
+// 'r'+id / 'h'+id. That split is what made deletes miss and edits leave a second
+// copy behind. Move the numbered ones across once, so there is one name per
+// entry from here on. Safe to run on every device: it is idempotent.
+async function migrateNumericKeys(node, prefix){
+  try{
+    const res=await Promise.race([
+      fetch(FB_URL+'/'+node+'.json',{cache:'no-store'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
+    ]);
+    if(!res.ok) return 0;
+    const data=await res.json();
+    if(!data) return 0;
+    const isArr=Array.isArray(data);
+    const names=isArr?data.map((_,i)=>String(i)):Object.keys(data);
+    const numeric=names.filter(k=>/^[0-9]+$/.test(k));
+    if(!numeric.length) return 0;
+    const get=k=>isArr?data[Number(k)]:data[k];
+    const patch={}; let moved=0;
+    numeric.forEach(k=>{
+      const v=get(k);
+      if(!v||typeof v!=='object'||!v.id) return;
+      patch[k]=null;                       // the numbered copy always goes
+      moved++;
+      if(node==='records'&&isDeletedRecord(v)) return;  // deleted stays deleted
+      const target=prefix+v.id;
+      const existing=names.indexOf(target)!==-1?get(target):null;
+      if(!existing){
+        patch[target]=v;
+      } else if(node==='records'&&!existing.comment&&v.comment){
+        // Keep the newer copy but don't lose a comment that only the old one has.
+        patch[target]=Object.assign({},existing,{comment:v.comment,commentDone:true});
+      }
+    });
+    if(!moved) return 0;
+    const put=await fetch(FB_URL+'/'+node+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});
+    if(!put.ok) throw new Error('HTTP '+put.status);
+    console.log('Tidied '+moved+' old-style '+node+' entries');
+    return moved;
+  }catch(e){ console.warn('Could not tidy '+node+':',e.message); return 0; }
+}
+
 function isStaleRecord(r){
   if(!CLEARED_AT||!r) return false;
   const t=Date.parse(r.submittedAtFull||'')||Number(r.id)||0;
@@ -235,7 +305,7 @@ async function fbSet(k, v){
       // This ensures no write can delete other teachers' records.
       // Cleared records are dropped here too: this loop is how a stale cache
       // used to push a whole deleted course back into the database.
-      await Promise.all(v.filter(r=>r&&r.id&&!isStaleRecord(r)).map(r=>
+      await Promise.all(v.filter(r=>r&&r.id&&!isStaleRecord(r)&&!isDeletedRecord(r)).map(r=>
         Promise.race([
           fetch(FB_URL+'/records/r'+r.id+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)}),
           new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000))
@@ -251,10 +321,57 @@ async function fbSet(k, v){
 }
 
 // Delete a single record from Firebase
+// A register's name in the database is not always 'r'+id — the oldest ones sit
+// under plain numbers from when the whole list was one array. Deleting the
+// wrong name did nothing at all, so the lesson reappeared on the next load.
+async function recordKeysFor(id){
+  const out=[];
+  try{
+    const res=await Promise.race([
+      fetch(FB_URL+'/records.json?shallow=true',{cache:'no-store'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+    ]);
+    if(res.ok){
+      const keys=await res.json();
+      const names=Array.isArray(keys)?keys.map((_,i)=>String(i)):Object.keys(keys||{});
+      if(names.indexOf('r'+id)!==-1) out.push('r'+id);
+      if(names.indexOf(String(id))!==-1) out.push(String(id));
+      if(!out.length){
+        // Fall back to a full read and match on the id inside each register.
+        const full=await fetch(FB_URL+'/records.json',{cache:'no-store'});
+        if(full.ok){
+          const data=await full.json();
+          if(Array.isArray(data)) data.forEach((x,i)=>{ if(x&&Number(x.id)===Number(id)) out.push(String(i)); });
+          else if(data&&typeof data==='object') Object.keys(data).forEach(k=>{ if(data[k]&&Number(data[k].id)===Number(id)) out.push(k); });
+        }
+      }
+    }
+  }catch(e){ console.warn('Could not look up the register:',e.message); }
+  return out;
+}
+
 async function fbDeleteRecord(id){
-  try {
-    await fetch(FB_URL+'/records/r'+id+'.json',{method:'DELETE'});
-  } catch(e){ console.warn('FB delete failed:',e.message); }
+  // Note it as deleted FIRST. If the removal itself fails we still never show
+  // or re-upload it, so a half-finished delete can't resurrect the lesson.
+  DELETED_IDS[String(id)]=Date.now();
+  try{
+    await fetch(FB_URL+'/deletedRecords/r'+id+'.json',
+      {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(Date.now())}).catch(()=>{});
+    let keys=await recordKeysFor(id);
+    if(!keys.length) keys=['r'+id];
+    const patch={}; keys.forEach(k=>{patch[k]=null;});
+    const res=await Promise.race([
+      fetch(FB_URL+'/records.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
+    ]);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const left=await recordKeysFor(id);
+    if(left.length) throw new Error('still in the database');
+    return true;
+  } catch(e){
+    console.warn('FB delete failed:',e.message);
+    return false;
+  }
 }
 
 // Delete a single record from Firebase by ID
@@ -440,7 +557,7 @@ async function bootFromFirebase(){
   document.getElementById('app').innerHTML = '<div style="text-align:center;padding:60px 20px;color:#94a3b8;font-size:14px;"><div style="font-size:32px;margin-bottom:12px;">📋</div>Loading…</div>';
 
   // Load all data in parallel including feedback
-  const [fbRecords, fbSchedule, fbHours, fbMessages, fbTeachers] = await Promise.all([
+  let [fbRecords, fbSchedule, fbHours, fbMessages, fbTeachers] = await Promise.all([
     fbGet('ewj-records',   []),
     fbGet('ewj-schedule',  BASE_SCHEDULE.map(s=>({...s,students:[...(s.students||[])]}))),
     fbGet('ewj-hours',     []),
@@ -463,11 +580,27 @@ async function bootFromFirebase(){
     if(cRes.ok){const v=await cRes.json();clearedAt=typeof v==='number'?v:0;}
   }catch(e){}
   CLEARED_AT=clearedAt;   // every later merge, cache write and upload checks this
+  await loadDeletedIds();  // registers deleted one by one must stay deleted
+  const tidied=await migrateNumericKeys('records','r');
+  await migrateNumericKeys('hours','h');
+  if(tidied){
+    // The list we just fetched is out of date now; take it again.
+    try{ const again=await fbGet('ewj-records', null); if(again&&again.length) fbRecords=again; }catch(e){}
+  }
   const beforeClear=r=>isStaleRecord(r);
 
   const rawRecords = Array.isArray(fbRecords) ? fbRecords : Object.values(fbRecords || {});
-  const cleanRecords = rawRecords.filter(r=>r&&r.id&&r.teacher).sort((a,b)=>(a.id||0)-(b.id||0));
-  const allCached = lsGet('ewj-records', []).filter(r=>r&&r.id&&r.teacher);
+  // Safety net: if the same register somehow arrives twice, show the fuller of
+  // the two rather than both.
+  const byId={};
+  rawRecords.filter(r=>r&&r.id&&r.teacher&&!isDeletedRecord(r)).forEach(r=>{
+    const k=String(r.id), had=byId[k];
+    if(!had){ byId[k]=r; return; }
+    const score=x=>(x.comment?2:0)+(x.adminFeedback?1:0)+((x.students||[]).length?1:0);
+    byId[k] = score(r)>score(had) ? r : had;
+  });
+  const cleanRecords = Object.keys(byId).map(k=>byId[k]).sort((a,b)=>(a.id||0)-(b.id||0));
+  const allCached = lsGet('ewj-records', []).filter(r=>r&&r.id&&r.teacher&&!isDeletedRecord(r));
   // Drop stale cached records one by one rather than deciding for the whole set.
   const cachedRecords = allCached.filter(r=>!beforeClear(r));
   if(cachedRecords.length !== allCached.length){
@@ -535,8 +668,8 @@ async function bootFromFirebase(){
       // Add any local records not in Firebase — but never one that was cleared.
       // Firebase not having it is the point: it was deleted on purpose.
       const fbIds=new Set(data.map(r=>r.id));
-      state.records.filter(r=>r&&r.id&&!fbIds.has(r.id)&&!isStaleRecord(r)).forEach(r=>merged.push(r));
-      state.records = merged.filter(r=>!isStaleRecord(r)).sort((a,b)=>(a.id||0)-(b.id||0));
+      state.records.filter(r=>r&&r.id&&!fbIds.has(r.id)&&!isStaleRecord(r)&&!isDeletedRecord(r)).forEach(r=>merged.push(r));
+      state.records = merged.filter(r=>!isStaleRecord(r)&&!isDeletedRecord(r)).sort((a,b)=>(a.id||0)-(b.id||0));
       lsSet('ewj-records', state.records);
       mergeFeedbackIntoRecords();
       if(state.tab==='log'||state.tab==='dashboard') renderAll();
@@ -675,7 +808,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v12.1</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v13.0</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -2323,6 +2456,31 @@ function duplicateSessions(){
 // second write replaced the first one's entry with a stale list — the clock-in
 // simply vanished. Each entry is now written on its own, like the registers,
 // so one teacher's device can never erase another's hours.
+// An entry's name in the database is NOT always 'h'+id. Entries written before
+// the per-entry change live under plain numbers (0, 1, 2 … from when the whole
+// list was one array). Assuming 'h'+id meant deleting an old entry did nothing
+// — so it came straight back — and editing one wrote a SECOND copy beside the
+// original, which is how a session came to be saved twice. So: find the real
+// name first, every time.
+async function hourKeysFor(id){
+  const out=[];
+  try{
+    const res=await Promise.race([
+      fetch(FB_URL+'/hours.json',{cache:'no-store'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+    ]);
+    if(res.ok){
+      const data=await res.json();
+      if(Array.isArray(data)){
+        data.forEach((x,i)=>{ if(x&&Number(x.id)===Number(id)) out.push(String(i)); });
+      } else if(data&&typeof data==='object'){
+        Object.keys(data).forEach(k=>{ if(data[k]&&Number(data[k].id)===Number(id)) out.push(k); });
+      }
+    }
+  }catch(e){ console.warn('Could not look up the entry:',e.message); }
+  return out;
+}
+
 async function saveHourEntry(entry){
   if(!entry||!entry.id) return;
   const hrs=getHours();
@@ -2330,12 +2488,20 @@ async function saveHourEntry(entry){
   if(idx>=0) hrs[idx]=entry; else hrs.push(entry);
   state.hours=hrs; lsSet('ewj-hours',hrs);
   try{
+    const found=await hourKeysFor(entry.id);
+    const key=found.length?found[0]:('h'+entry.id);
     await Promise.race([
-      fetch(FB_URL+'/hours/h'+entry.id+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(entry)}),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000))
+      fetch(FB_URL+'/hours/'+key+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(entry)}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
     ]);
+    // If the same session somehow sits under more than one name, the extras go
+    // now — otherwise every edit leaves another copy behind.
+    if(found.length>1){
+      const patch={}; found.slice(1).forEach(k=>{patch[k]=null;});
+      await fetch(FB_URL+'/hours.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)}).catch(()=>{});
+    }
     // Confirm it is in the database before telling anyone it is saved.
-    const check=await fetch(FB_URL+'/hours/h'+entry.id+'.json?shallow=true',{cache:'no-store'});
+    const check=await fetch(FB_URL+'/hours/'+key+'.json?shallow=true',{cache:'no-store'});
     const there=check.ok?await check.json():null;
     if(there===null||there===undefined) throw new Error('it did not arrive');
     showFlash('✓ Saved');
@@ -2344,15 +2510,29 @@ async function saveHourEntry(entry){
     showFlash('⚠ NOT SAVED — '+e.message+'. Try again before you leave.');
   }
 }
+
 async function deleteHourEntry(id){
   state.hours=getHours().filter(x=>x&&x.id!==id);
   lsSet('ewj-hours',state.hours);
   try{
-    await Promise.race([
-      fetch(FB_URL+'/hours/h'+id+'.json',{method:'DELETE'}),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000))
+    let keys=await hourKeysFor(id);
+    if(!keys.length) keys=['h'+id];
+    // One PATCH of nulls removes exactly these names and touches nothing else.
+    const patch={}; keys.forEach(k=>{patch[k]=null;});
+    const res=await Promise.race([
+      fetch(FB_URL+'/hours.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
     ]);
-  }catch(e){ console.warn('Delete failed:',e.message); }
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    // Make sure it really went, so nothing silently comes back on the next load.
+    const left=await hourKeysFor(id);
+    if(left.length) throw new Error('it is still in the database');
+    return true;
+  }catch(e){
+    console.warn('Delete failed:',e.message);
+    showFlash('⚠ Could not remove it — '+e.message);
+    return false;
+  }
 }
 // Kept for anything still handing over a whole list: local only, never a bulk
 // write to Firebase.
@@ -2516,7 +2696,11 @@ function renderHours(){
       if(!confirm('Remove '+list.length+' repeated '+(list.length===1?'session':'sessions')+'?\n\n'+preview+(list.length>6?'\n\u2026and '+(list.length-6)+' more':'')+'\n\nOne of each is kept. This cannot be undone.')) return;
       dBtn.disabled=true;dBtn.style.opacity='.6';dBtn.textContent='Removing\u2026';
       Promise.all(list.map(h=>deleteHourEntry(h.id)))
-        .then(()=>{showFlash('\u2713 Removed '+list.length);renderHours();})
+        .then(res=>{
+          const ok=res.filter(Boolean).length;
+          showFlash(ok===list.length?('\u2713 Removed '+ok):('\u26a0 Removed '+ok+' of '+list.length+' \u2014 try again'));
+          renderHours();
+        })
         .catch(()=>{showFlash('\u26a0 Some could not be removed \u2014 try again');renderHours();});
     };
     dRow.appendChild(msg);dRow.appendChild(dBtn);
