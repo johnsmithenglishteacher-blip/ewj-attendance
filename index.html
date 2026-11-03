@@ -196,6 +196,122 @@ function isDeletedRecord(r){
   if(!r) return false;
   return !!DELETED_IDS[String(r.id)];
 }
+// Comparing the September timetable with today's tells us somebody is in no class
+// any more, but not WHY. Most often they left; sometimes they only moved group and
+// the new class list never got them. John can say which, and that correction is
+// kept in Firebase so it reads the same on every device, for good.
+//   left   → a real drop-out
+//   never  → enrolled, never came to a lesson
+//   moved  → still with us, in a different group ("to" says which)
+//   ignore → not a student, keep out of all four lists
+let ROSTER_STATUS = {};
+function statusKey(name){ return String(name||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,''); }
+function statusFor(name){ return ROSTER_STATUS[statusKey(name)] || null; }
+async function loadRosterStatus(){
+  try{
+    const res=await Promise.race([
+      fetch(FB_URL+'/rosterStatus.json',{cache:'no-store'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+    ]);
+    if(!res.ok) return;
+    const d=await res.json();
+    ROSTER_STATUS=(d&&typeof d==='object')?d:{};
+  }catch(e){ console.warn('Could not read the roster corrections:',e.message); }
+}
+async function setRosterStatus(name,status,extra){
+  const key=statusKey(name);
+  if(!key) return false;
+  const body=status?Object.assign({
+    status:status, name:String(name).trim(),
+    by:state.activeTeacher||'John', ts:Date.now()
+  },extra||{}):null;
+  // Keep the screen honest straight away, then confirm with the database.
+  if(body) ROSTER_STATUS[key]=body; else delete ROSTER_STATUS[key];
+  try{
+    const res=await Promise.race([
+      fetch(FB_URL+'/rosterStatus/'+key+'.json',
+        {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+    ]);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const check=await fetch(FB_URL+'/rosterStatus/'+key+'.json',{cache:'no-store'});
+    const saved=check.ok?await check.json():undefined;
+    if(body && (saved===null||saved===undefined)) throw new Error('it did not arrive');
+    showFlash('\u2713 Saved');
+    return true;
+  }catch(e){
+    console.warn('Roster correction not saved:',e.message);
+    showFlash('\u26a0 NOT SAVED \u2014 '+e.message);
+    await loadRosterStatus();   // put the screen back to what is really stored
+    return false;
+  }
+}
+
+// A student who tells us they are away for a month or two has not left and is not
+// absent each week: they are paused. A pause belongs to ONE class, because they
+// often stop coming to Tuesday and keep coming to Thursday. While it lasts the
+// register shows them as paused, their absences stop counting, and when the
+// return date passes the pause lifts itself.
+let PAUSED = {};
+function pauseKey(name,slot){
+  return statusKey(name)+'__'+statusKey(slot?slotKey(slot):'all');
+}
+function pauseFor(name,slot,onDate){
+  const p=PAUSED[pauseKey(name,slot)];
+  if(!p||!p.name) return null;
+  const when=onDate?(new Date(onDate).getTime()||Date.now()):Date.now();
+  if(p.from && when < (Date.parse(p.from)||0)) return null;       // not started yet
+  if(p.until){
+    const end=Date.parse(p.until);
+    // The return date is the day they are back, so the pause covers up to the day before.
+    if(end && when >= end) return null;
+  }
+  return p;
+}
+async function loadPaused(){
+  try{
+    const res=await Promise.race([
+      fetch(FB_URL+'/paused.json',{cache:'no-store'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+    ]);
+    if(!res.ok) return;
+    const d=await res.json();
+    PAUSED=(d&&typeof d==='object')?d:{};
+  }catch(e){ console.warn('Could not read the paused list:',e.message); }
+}
+async function setPause(name,slot,info){
+  const key=pauseKey(name,slot);
+  if(!key) return false;
+  const body=info?Object.assign({
+    name:String(name).trim(),
+    teacher:slot?slot.teacher:'', day:slot?slot.day:'', time:slot?slot.time:'', course:slot?slot.course:'',
+    by:state.activeTeacher||'John', ts:Date.now()
+  },info):null;
+  if(body) PAUSED[key]=body; else delete PAUSED[key];
+  try{
+    const res=await Promise.race([
+      fetch(FB_URL+'/paused/'+key+'.json',
+        {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+    ]);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const check=await fetch(FB_URL+'/paused/'+key+'.json',{cache:'no-store'});
+    const saved=check.ok?await check.json():undefined;
+    if(body && (saved===null||saved===undefined)) throw new Error('it did not arrive');
+    showFlash(body?'\u2713 Paused':'\u2713 Back in class');
+    return true;
+  }catch(e){
+    console.warn('Pause not saved:',e.message);
+    showFlash('\u26a0 NOT SAVED \u2014 '+e.message);
+    await loadPaused();
+    return false;
+  }
+}
+// Every pause in force right now, for the admin summary.
+function activePauses(){
+  return Object.keys(PAUSED).map(k=>PAUSED[k]).filter(p=>p&&p.name&&pauseFor(p.name,{teacher:p.teacher,day:p.day,time:p.time,course:p.course}));
+}
+
 async function loadDeletedIds(){
   try{
     const res=await Promise.race([
@@ -592,6 +708,8 @@ async function bootFromFirebase(){
   }catch(e){}
   CLEARED_AT=clearedAt;   // every later merge, cache write and upload checks this
   await loadDeletedIds();  // registers deleted one by one must stay deleted
+  await loadRosterStatus();  // and John's corrections to who left and who moved
+  await loadPaused();        // and who is away for a while but has not left
   const tidied=await migrateNumericKeys('records','r');
   await migrateNumericKeys('hours','h');
   if(tidied){
@@ -739,7 +857,7 @@ function absMap(weeks4=false){
       if(rw===null||tw-rw>4)return;  // only last 4 weeks
     }
     (r.students||[]).forEach(s=>{
-      if(s.status==='absent'&&s.flag!=='dropped') m[s.name]=(m[s.name]||0)+1;
+      if(s.status==='absent'&&s.flag!=='dropped'&&s.flag!=='paused') m[s.name]=(m[s.name]||0)+1;
     });
   });
   return m;
@@ -913,7 +1031,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v14.1</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v15.2</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -1126,6 +1244,7 @@ async function submitReg(){
       // outlive its two weeks by being stored on every later register.
       flag:reg.flags[n]==='dropped'?'dropped'
         :reg.justToday[n]?'visitor'
+        :pauseFor(n,s,reg.dateVal)?'paused'
         :((reg.added.indexOf(n)!==-1||isNewStudent(n,reg.dateVal))&&reg.flags[n]==='new'?'new':'')}))};
   if(reg.editingId){const ex=state.records.find(r=>r.id===reg.editingId);if(ex){entry.comment=ex.comment;entry.commentDone=ex.commentDone;entry.commentAt=ex.commentAt;}}
   // Update local state immediately — no bulk Firebase write
@@ -1403,10 +1522,46 @@ function renderRegister(){
       const top=document.createElement('div');top.className='stu-top';
       if(isN){const nb=document.createElement('span');nb.style.cssText='font-size:10px;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:20px;font-weight:700;flex-shrink:0;';nb.textContent='NEW';top.appendChild(nb);}
       if(isV){const vb=document.createElement('span');vb.style.cssText='font-size:10px;background:#eef2ff;color:#4f46e5;padding:2px 6px;border-radius:20px;font-weight:700;flex-shrink:0;';vb.textContent='TODAY';vb.title='On this register only — not in the group';top.appendChild(vb);}
+      const pz=isD?null:pauseFor(n,slot,reg.dateVal);
+      if(pz){
+        const pb=document.createElement('span');
+        pb.style.cssText='font-size:10px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:20px;font-weight:700;flex-shrink:0;';
+        pb.textContent='PAUSED';
+        pb.title=(pz.until?('Back on '+fmtDay(Date.parse(pz.until))):'No return date given')+(pz.note?(' — '+pz.note):'');
+        top.appendChild(pb);
+      }
       const nm=document.createElement('span');nm.className='stu-name';nm.textContent=n;top.appendChild(nm);
       if(ta>0&&!isD){const ab=document.createElement('span');ab.className='absbdg';ab.textContent=ta+'A';top.appendChild(ab);}
       if(isD){const bl=document.createElement('span');bl.style.cssText='font-size:11px;color:#b91c1c;flex-shrink:0;';bl.textContent='left';top.appendChild(bl);}
-      const fb=document.createElement('button');fb.className='fb'+(isD?' dropped':justAdded?' newstu':'');fb.style.marginLeft='auto';fb.textContent=isD?'↩':justAdded?'✕':'Drop';
+      // Pausing is John's call, not a teacher's — but a teacher still sees the
+      // badge, so they know not to chase someone who is away by arrangement.
+      if(!isD&&!isV&&!state.activeTeacher){
+        const pbtn=document.createElement('button');
+        pbtn.className='fb';
+        pbtn.style.cssText='margin-left:auto;'+(pz?'background:#fef3c7;color:#92400e;border-color:#fcd34d;':'');
+        pbtn.textContent=pz?'Back':'Pause';
+        pbtn.title=pz?'End the pause — they are coming again':'Away for a few weeks but not leaving';
+        pbtn.onclick=async()=>{
+          if(pz){
+            if(!confirm(n+' is coming to '+(slot.course||'this class')+' again?')) return;
+            await setPause(n,slot,null);
+            renderRegister();
+            return;
+          }
+          const until=prompt('Pause '+n+' in '+(slot.course||'this class')+'.\n\n'
+            +'They stay in the group and stop being counted absent.\n'
+            +'Other classes are not affected.\n\n'
+            +'Coming back on? (YYYY-MM-DD, or leave empty if not known)','');
+          if(until===null) return;
+          const clean=until.trim();
+          if(clean && isNaN(Date.parse(clean))){ alert('Write the date as YYYY-MM-DD, for example 2027-01-12.'); return; }
+          const why=prompt('Why, in a few words? (optional)','')||'';
+          await setPause(n,slot,{from:new Date().toISOString().slice(0,10),until:clean||'',note:why.trim()});
+          renderRegister();
+        };
+        top.appendChild(pbtn);
+      }
+      const fb=document.createElement('button');fb.className='fb'+(isD?' dropped':justAdded?' newstu':'');fb.style.marginLeft=(!isD&&!isV&&!state.activeTeacher)?'6px':'auto';fb.textContent=isD?'↩':justAdded?'✕':'Drop';
       fb.onclick=()=>{
         if(isD||justAdded){clearFlag(n);return;}
         // Dropping takes them out of the class list for good, so say so.
@@ -2449,6 +2604,28 @@ function renderManage(){
           rm.style.cssText='border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:6px;width:24px;height:24px;line-height:1;font-size:14px;font-family:inherit;cursor:pointer;flex-shrink:0;padding:0;';
           rm.textContent='×';
           rm.onclick=()=>{manState.removing=(manState.removing===name+'␟'+key)?null:name+'␟'+key;renderManage();};
+          const pz2=pauseFor(name,s);
+          const pb2=document.createElement('button');
+          pb2.title=pz2?('Paused'+(pz2.until?(' until '+pz2.until):'')+(pz2.note?(' \u2014 '+pz2.note):'')):('Pause '+name+' in this class only');
+          pb2.style.cssText='border:1px solid '+(pz2?'#fcd34d':'#e2e8f0')+';background:'+(pz2?'#fef3c7':'#fff')+';color:'+(pz2?'#92400e':'#64748b')+';border-radius:6px;height:24px;padding:0 7px;line-height:1;font-size:10px;font-weight:700;font-family:inherit;cursor:pointer;flex-shrink:0;';
+          pb2.textContent=pz2?'PAUSED':'\u23f8';
+          pb2.onclick=async()=>{
+            if(pz2){
+              if(!confirm(name+' is coming to '+s.course+' again?\n\nPaused'+(pz2.until?(' until '+pz2.until):'')+(pz2.note?('\n'+pz2.note):''))) return;
+              await setPause(name,s,null); renderManage(); renderRegister(); return;
+            }
+            const until=prompt('Pause '+name+' in '+s.course+' ('+s.day+' '+s.time+').\n\n'
+              +'This class only \u2014 their other classes carry on as normal.\n'
+              +'They stay in the group and stop being counted absent, and the pause lifts itself on the date below.\n\n'
+              +'Coming back on? (YYYY-MM-DD, or leave empty if not known)','');
+            if(until===null) return;
+            const clean=until.trim();
+            if(clean && isNaN(Date.parse(clean))){ alert('Write the date as YYYY-MM-DD, for example 2027-01-12.'); return; }
+            const why=prompt('Why, in a few words? (optional)','')||'';
+            await setPause(name,s,{from:new Date().toISOString().slice(0,10),until:clean||'',note:why.trim()});
+            renderManage(); renderRegister();
+          };
+          row.appendChild(pb2);
           const ren=document.createElement('button');
           ren.title='Correct '+name+"'s name";
           ren.style.cssText='border:1px solid #c7d2fe;background:#fff;color:#4f46e5;border-radius:6px;width:24px;height:24px;line-height:1;font-size:12px;font-family:inherit;cursor:pointer;flex-shrink:0;padding:0;';
@@ -3456,7 +3633,7 @@ function showAtRiskReport(studentName){
 }
 
 // ── Course tab (admin only) ───────────────────────────────────────────────
-const courseState={sub:'comments',q:'',teacher:'',events:null,loading:false};
+const courseState={sub:'comments',q:'',teacher:'',events:null,loading:false,editing:null};
 
 function recStamp(r){return Date.parse(r.submittedAtFull||'')||Number(r.id)||0;}
 function fmtDay(ms){return new Date(ms).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});}
@@ -3516,8 +3693,19 @@ function renderCourse(){
     // Somebody on the starting list who is in no class now has either left the
     // course or never turned up in the first place. Those are not the same
     // thing, and counting the second as a drop-out overstates how many we lose.
-    if(!now[k]) (attendedEver(base[k].name)?left:neverStarted).push(base[k]);
-    else {
+    if(!now[k]){
+      const p=base[k], ov=statusFor(p.name);
+      if(ov&&ov.status==='ignore') return;
+      if(ov&&ov.status==='moved'){
+        moved.push({name:p.name,from:p.classes,to:ov.to?[ov.to]:[],corrected:ov});
+        return;
+      }
+      if(ov&&ov.status==='left'){ left.push(Object.assign({},p,{corrected:ov})); return; }
+      if(ov&&ov.status==='never'){ neverStarted.push(Object.assign({},p,{corrected:ov})); return; }
+      (attendedEver(p.name)?left:neverStarted).push(p);
+      return;
+    }
+    {
       const a=base[k].classes.slice().sort().join('|'), b=now[k].classes.slice().sort().join('|');
       if(a!==b) moved.push({name:now[k].name,from:base[k].classes,to:now[k].classes});
     }
@@ -3594,25 +3782,90 @@ function renderCourse(){
     return;
   }
 
-  const personCard=(name,lines,ts,tint)=>{
+  const personCard=(name,lines,ts,tint,corrected)=>{
     const c=document.createElement('div');
     c.style.cssText='background:#fff;border:1.5px solid '+tint+';border-radius:10px;padding:11px 13px;margin-bottom:8px;';
     c.innerHTML='<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">'
       +'<span style="font-weight:700;font-size:14px;">'+escHtml(name)+'</span>'
       +'<span style="font-size:11px;color:#94a3b8;margin-left:auto;">'+(ts?escHtml(fmtDay(ts)):'date not recorded')+'</span></div>'
       +lines.map(l=>'<div style="font-size:12.5px;color:#475569;margin-top:3px;">'+escHtml(l)+'</div>').join('');
+
+    // Where a list is only a guess, John can correct it — and the correction is
+    // kept, so it reads the same tomorrow and on every other device.
+    if(corrected){
+      const tag=document.createElement('div');
+      tag.style.cssText='font-size:11px;color:#4f46e5;background:#eef2ff;border-radius:6px;padding:3px 7px;margin-top:6px;display:inline-block;';
+      tag.textContent='Put here by '+escHtml(corrected.by||'John')
+        +(corrected.note?(' \u2014 '+corrected.note):'');
+      c.appendChild(tag);
+    }
+    if(!state.activeTeacher){
+      const open=courseState.editing===name;
+      const fix=document.createElement('button');
+      fix.style.cssText='border:1px solid #c7d2fe;background:'+(open?'#eef2ff':'#fff')+';color:#4f46e5;border-radius:7px;padding:4px 10px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:8px;';
+      fix.textContent=open?'Close':'Not right? Change this';
+      fix.onclick=()=>{courseState.editing=open?null:name;renderCourse();};
+      c.appendChild(fix);
+
+      if(open){
+        const panel=document.createElement('div');
+        panel.style.cssText='background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:9px;padding:11px 12px;margin-top:9px;';
+        panel.innerHTML='<div style="font-size:12.5px;color:#475569;line-height:1.5;margin-bottom:8px;">'
+          +'What actually happened to <strong>'+escHtml(name)+'</strong>?</div>';
+
+        const noteIn=document.createElement('input');
+        noteIn.type='text';noteIn.placeholder='Optional note \u2014 e.g. moved to Tuesday CAE 1';
+        noteIn.value=(corrected&&corrected.note)||'';
+        noteIn.style.cssText='width:100%;padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:12.5px;font-family:inherit;outline:none;margin-bottom:9px;';
+        panel.appendChild(noteIn);
+
+        const row=document.createElement('div');row.style.cssText='display:flex;gap:6px;flex-wrap:wrap;';
+        const choice=(label,bg,fg,status,extra)=>{
+          const b=document.createElement('button');
+          b.style.cssText='background:'+bg+';color:'+fg+';border:1.5px solid '+bg+';border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;';
+          b.textContent=label;
+          b.onclick=async()=>{
+            row.querySelectorAll('button').forEach(x=>{x.disabled=true;x.style.opacity='.55';});
+            const ex=Object.assign({note:noteIn.value.trim()},extra||{});
+            if(!ex.note) delete ex.note;
+            const ok=await setRosterStatus(name,status,ex);
+            if(ok) courseState.editing=null;
+            renderCourse();
+          };
+          row.appendChild(b);
+        };
+        choice('Moved group \u2014 still with us','#4f46e5','#fff','moved',{to:noteIn.value.trim()});
+        choice('Really left','#dc2626','#fff','left');
+        choice('Never started','#64748b','#fff','never');
+        choice('Not a student \u2014 hide','#fff','#475569','ignore');
+        if(corrected){
+          const back=document.createElement('button');
+          back.style.cssText='background:#fff;color:#94a3b8;border:1.5px solid #e2e8f0;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;';
+          back.textContent='Undo \u2014 work it out automatically';
+          back.onclick=async()=>{
+            back.disabled=true;back.style.opacity='.55';
+            const ok=await setRosterStatus(name,null);
+            if(ok) courseState.editing=null;
+            renderCourse();
+          };
+          row.appendChild(back);
+        }
+        panel.appendChild(row);
+        c.appendChild(panel);
+      }
+    }
     return c;
   };
 
   if(courseState.sub==='joined'){
     if(!joined.length)body.appendChild(empty('No students have joined since the course started.'));
     else joined.sort((a,b)=>a.name.localeCompare(b.name))
-      .forEach(p=>body.appendChild(personCard(p.name,p.classes,evFor(p.name,'added'),'#bbf7d0')));
+      .forEach(p=>body.appendChild(personCard(p.name,p.classes,evFor(p.name,'added'),'#bbf7d0',p.corrected)));
   }
   if(courseState.sub==='left'){
     if(!left.length)body.appendChild(empty('Nobody who started the course has left.'));
     else left.sort((a,b)=>a.name.localeCompare(b.name))
-      .forEach(p=>body.appendChild(personCard(p.name,p.classes.map(c=>'was in '+c),evFor(p.name,'removed'),'#fecaca')));
+      .forEach(p=>body.appendChild(personCard(p.name,p.classes.map(c=>'was in '+c),evFor(p.name,'removed'),'#fecaca',p.corrected)));
   }
   if(courseState.sub==='never'){
     if(!neverStarted.length)body.appendChild(empty('Everybody on the September list came to at least one lesson.'));
@@ -3622,7 +3875,7 @@ function renderCourse(){
       intro.textContent='On the timetable in September but never present at a single lesson. These are not drop-outs \u2014 they never began \u2014 so they are kept out of the drop-out figure.';
       body.appendChild(intro);
       neverStarted.sort((a,b)=>a.name.localeCompare(b.name))
-        .forEach(p=>body.appendChild(personCard(p.name,p.classes.map(c=>'was listed in '+c),evFor(p.name,'removed'),'#e2e8f0')));
+        .forEach(p=>body.appendChild(personCard(p.name,p.classes.map(c=>'was listed in '+c),evFor(p.name,'removed'),'#e2e8f0',p.corrected)));
     }
   }
   if(courseState.sub==='moved'){
@@ -3631,7 +3884,8 @@ function renderCourse(){
       const lines=[];
       p.from.filter(c=>!p.to.includes(c)).forEach(c=>lines.push('left  '+c));
       p.to.filter(c=>!p.from.includes(c)).forEach(c=>lines.push('joined '+c));
-      body.appendChild(personCard(p.name,lines,0,'#fde68a'));
+      if(!p.to.length) lines.push('moved \u2014 new group not on the timetable yet');
+      body.appendChild(personCard(p.name,lines,0,'#fde68a',p.corrected));
     });
   }
 
