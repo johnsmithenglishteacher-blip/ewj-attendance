@@ -142,7 +142,12 @@ async function fetchFB(path){const r=await fetch(`${FB}/${path}.json`);if(!r.ok)
 async function fetchCourseRecords(){
   try{
     const url=`${FB}/records.json?orderBy=${encodeURIComponent('"$key"')}&startAt=${encodeURIComponent('"r'+COURSE_START+'"')}`;
-    const r=await fetch(url,{cache:'no-store'});
+    // Sorting by name costs Firebase real work on a big node; on a slow line it may
+    // never come back. Give it 12 seconds, then stop waiting and take the lot.
+    const r=await Promise.race([
+      fetch(url,{cache:'no-store'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timed out')),12000))
+    ]);
     if(!r.ok) throw new Error('HTTP '+r.status);
     const d=await r.json();
     if(d&&typeof d==='object'&&Object.keys(d).length) return d;

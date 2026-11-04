@@ -109,6 +109,7 @@ const DEFAULT_FB_URL = 'https://emglish-with-john-default-rtdb.europe-west1.fire
 // and the two previous weeks the feedback builds on, with room to spare.
 const WEEKS_BACK = 8;
 let LOAD_ALL = false;
+let WINDOW_NOTE = '';   // why the quick load was abandoned, shown where it stays visible
 const PROXY_URL = 'https://api.anthropic.com/v1/messages';
 
 // The database address is fixed. The box on the page is display-only: a browser
@@ -160,14 +161,30 @@ async function loadRecords() {
         + '&startAt=' + encodeURIComponent('"r' + windowMs + '"')
       : FB_URL() + '/records.json';
     log(windowMs ? ('Loading the last ' + WEEKS_BACK + ' weeks …') : 'Loading the whole course …');
-    let rRes;
-    try { rRes = await get(recUrl, 30); }
-    catch(e) {
-      throw new Error('Could not read the registers — ' + e.message + '.\n\n'
-        + 'Address: ' + recUrl + '\n\n'
-        + 'If the Attendance Register itself works on this computer, the database is fine and '
-        + 'something in this browser is stopping this page. An ad-blocking or privacy extension '
-        + 'is the usual cause — try a Private window.');
+    // Asking Firebase to sort by name costs it real work on a node this size, and
+    // on a slow connection it simply does not come back. It is an optimisation,
+    // not a requirement: give it a short go, and if it will not play, load the lot.
+    let rRes = null, usedWindow = !!windowMs;
+    if (windowMs) {
+      try { rRes = await get(recUrl, 12); }
+      catch(e) {
+        WINDOW_NOTE = 'Asking only for the recent weeks timed out, so the whole course was loaded instead. Nothing is missing — it just took longer.';
+        rRes = null; usedWindow = false;
+      }
+      if (rRes && !rRes.ok) {
+        WINDOW_NOTE = 'The database would not sort by date (HTTP ' + rRes.status + '), so the whole course was loaded instead. Nothing is missing.';
+        rRes = null; usedWindow = false;
+      }
+    }
+    if (!rRes) {
+      try { rRes = await get(FB_URL() + '/records.json', 60); }
+      catch(e) {
+        throw new Error('Could not read the registers — ' + e.message + '.\n\n'
+          + 'Address: ' + FB_URL() + '/records.json\n\n'
+          + 'If the Attendance Register itself works on this computer, the database is fine and '
+          + 'something in this browser is stopping this page. An ad-blocking or privacy extension '
+          + 'is the usual cause — try a Private window.');
+      }
     }
     if (rRes.status === 401 || rRes.status === 403) {
       throw new Error('Firebase refused the request (HTTP ' + rRes.status + '). The database rules are probably still locked — open Firebase → Realtime Database → Rules and set .read and .write back to true.');
@@ -189,7 +206,7 @@ async function loadRecords() {
     // A database that will not sort by name, or a course whose oldest registers
     // still sit under plain numbers, would come back empty. Take the lot rather
     // than show nothing.
-    if (windowMs && (!rDataUsed || !Object.keys(rDataUsed).length)) {
+    if (usedWindow && (!rDataUsed || !Object.keys(rDataUsed).length)) {
       log('The database would not hand over just the recent ones — loading all of them.');
       const allRes = await get(FB_URL() + '/records.json', 45);
       if (allRes.ok) rDataUsed = await allRes.json();
@@ -212,7 +229,7 @@ async function loadRecords() {
     log('Loaded ' + records.length + ' records with comments. ' + Object.keys(feedback).length + ' already have feedback.');
     // Say plainly that this is a window, and offer the rest in one click — older
     // lessons must never go missing without a word.
-    if (windowMs) {
+    if (usedWindow) {
       log('That is the last ' + WEEKS_BACK + ' weeks only. Anything older is not on this page yet.');
       const holder = document.getElementById('loadAllHolder');
       if (holder) {
@@ -225,7 +242,12 @@ async function loadRecords() {
       }
     } else {
       const holder = document.getElementById('loadAllHolder');
-      if (holder) holder.innerHTML = '<span style="font-size:12px;color:#94a3b8;">Showing the whole course.</span>';
+      if (holder) {
+        holder.innerHTML = WINDOW_NOTE
+          ? '<div style="font-size:12px;color:#92400e;background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:8px 11px;line-height:1.5;">'
+            + WINDOW_NOTE.replace(/</g,'&lt;') + '</div>'
+          : '<span style="font-size:12px;color:#94a3b8;">Showing the whole course.</span>';
+      }
     }
 
     const teachers = [...new Set(records.map(r => r.teacher))].sort();
