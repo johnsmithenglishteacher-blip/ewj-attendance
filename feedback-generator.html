@@ -213,9 +213,9 @@ async function loadRecords() {
     }catch(e){
       throw new Error('Could not read the registers \u2014 ' + e.message + '.\n\n'
         + 'Address: ' + FB_URL() + '/records.json\n\n'
-        + 'If the Attendance Register itself works on this computer, the database is fine and '
-        + 'something in this browser is stopping this page. An ad-blocking or privacy extension '
-        + 'is the usual cause \u2014 try a Private window.');
+        + 'This is the database being slow, not your browser. Check Firebase \u2192 Usage: if the '
+        + 'download quota is spent, every request crawls until it resets. Wait a few minutes '
+        + 'before trying again \u2014 repeated attempts make it worse.');
     }
     const usedWindow = !!windowMs;
 
