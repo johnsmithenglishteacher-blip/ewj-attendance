@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EWJ — How big is the database?</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;padding:24px;max-width:720px;margin:0 auto;}
+  h1{font-size:20px;font-weight:800;margin-bottom:4px;}
+  .sub{font-size:13px;color:#94a3b8;margin-bottom:20px;line-height:1.5;}
+  .btn{border:none;border-radius:9px;padding:12px 22px;font-size:14px;font-family:inherit;font-weight:700;cursor:pointer;background:#4f46e5;color:#fff;margin-bottom:16px;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .card{background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:12px;}
+  .ttl{font-weight:700;font-size:13px;margin-bottom:8px;}
+  .big{font-size:26px;font-weight:800;color:#4f46e5;}
+  .lbl{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-top:2px;}
+  .row{display:flex;gap:22px;flex-wrap:wrap;}
+  #log{background:#1e293b;color:#cbd5e1;border-radius:10px;padding:14px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;min-height:90px;white-space:pre-wrap;line-height:1.6;}
+  .ok{color:#86efac;} .bad{color:#fca5a5;} .warn{color:#fde047;}
+  .bar{height:9px;background:#e2e8f0;border-radius:20px;overflow:hidden;margin-top:10px;}
+  .fill{height:100%;background:#4f46e5;width:0;transition:width .2s;}
+  .verdict{border-radius:10px;padding:13px 15px;font-size:13.5px;line-height:1.6;margin-top:12px;display:none;}
+</style>
+</head>
+<body>
+
+<h1>How big is the database?</h1>
+<p class="sub">This downloads the registers once and measures what comes back. It changes nothing — it only reads.<br>Leave it running even if it looks slow; that is the thing being measured.</p>
+
+<button class="btn" id="go">Start the test</button>
+
+<div class="card">
+  <div class="ttl">Downloading the registers</div>
+  <div class="row">
+    <div><div class="big" id="mb">—</div><div class="lbl">Megabytes</div></div>
+    <div><div class="big" id="secs">—</div><div class="lbl">Seconds</div></div>
+    <div><div class="big" id="speed">—</div><div class="lbl">MB per second</div></div>
+    <div><div class="big" id="count">—</div><div class="lbl">Registers</div></div>
+  </div>
+  <div class="bar"><div class="fill" id="fill"></div></div>
+</div>
+
+<div id="log">Ready.</div>
+<div class="verdict" id="verdict"></div>
+
+<script>
+const FB='https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
+const $=id=>document.getElementById(id);
+const log=(m,cls)=>{const d=document.createElement('div');if(cls)d.className=cls;d.textContent=new Date().toLocaleTimeString()+' — '+m;$('log').appendChild(d);$('log').scrollTop=1e9;};
+
+$('go').onclick=async()=>{
+  $('go').disabled=true; $('log').textContent=''; $('verdict').style.display='none';
+  let keyCount=null;
+
+  // 1. How many registers are there? ?shallow=true returns only the names, so this
+  //    is tiny and tells us whether the database answers at all.
+  log('Asking how many registers there are (a very small request)…');
+  const t0=performance.now();
+  try{
+    const r=await fetch(FB+'/records.json?shallow=true',{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    keyCount=d?Object.keys(d).length:0;
+    const ms=Math.round(performance.now()-t0);
+    $('count').textContent=keyCount;
+    $('secs').textContent=(ms/1000).toFixed(1);
+    log('There are '+keyCount+' registers. The names-only request took '+ms+' ms.', ms>5000?'bad':'ok');
+    if(ms>5000){
+      log('That request returns about '+Math.round(keyCount*15/1024)+' KB of text and should take under a second.','warn');
+      log('Taking '+(ms/1000).toFixed(0)+'s means the database is slow to open the records node at all \u2014 it is the size of the node, not the amount being sent.','warn');
+    }
+  }catch(e){
+    log('Even the small request failed: '+e.message,'bad');
+    log('That means the database or the connection is refusing this browser, not that the data is too big.','bad');
+    $('go').disabled=false; return;
+  }
+
+  // 2. Now the real one, read as a stream so we can watch it arrive.
+  log('Now downloading all of them. Watch the megabytes climb — if the number moves, it is working.');
+  const t1=performance.now();
+  let bytes=0, lastLog=0;
+  try{
+    const res=await fetch(FB+'/records.json',{cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const reader=res.body.getReader();
+    while(true){
+      const {done,value}=await reader.read();
+      if(done) break;
+      bytes+=value.length;
+      const mb=bytes/1048576, secs=(performance.now()-t1)/1000;
+      $('mb').textContent=mb.toFixed(2);
+      $('secs').textContent=secs.toFixed(1);
+      $('speed').textContent=(mb/secs).toFixed(2);
+      $('fill').style.width=Math.min(100,mb*8)+'%';
+      if(secs-lastLog>5){ lastLog=secs; log('still going — '+mb.toFixed(1)+' MB after '+Math.round(secs)+'s'); }
+    }
+    const secs=(performance.now()-t1)/1000, mb=bytes/1048576;
+    $('fill').style.width='100%';
+    log('Finished. '+mb.toFixed(2)+' MB in '+secs.toFixed(1)+' seconds.','ok');
+
+    const v=$('verdict'); v.style.display='block';
+    const perRec=keyCount?Math.round(bytes/keyCount):0;
+    if(secs<10){
+      v.style.cssText+=';background:#f0fdf4;border:1.5px solid #86efac;color:#166534;';
+      v.innerHTML='<strong>The download is fine.</strong> '+mb.toFixed(1)+' MB in '+secs.toFixed(0)+' seconds. '
+        +'So the tools stalling is not the size of the data — send John this screen and he will look elsewhere.';
+    } else if(secs<40){
+      v.style.cssText+=';background:#fffbeb;border:1.5px solid #fde68a;color:#92400e;';
+      v.innerHTML='<strong>Slow but working.</strong> '+mb.toFixed(1)+' MB in '+secs.toFixed(0)+' seconds, about '
+        +perRec+' bytes per register. The tools need longer patience settings, and the old registers want archiving.';
+    } else {
+      v.style.cssText+=';background:#fef2f2;border:1.5px solid #fca5a5;color:#991b1b;';
+      v.innerHTML='<strong>Too slow to keep doing this.</strong> '+mb.toFixed(1)+' MB in '+secs.toFixed(0)+' seconds. '
+        +'Every tool pays this on every open. The registers need splitting by course or term.';
+    }
+  }catch(e){
+    log('The full download failed after '+((performance.now()-t1)/1000).toFixed(1)+'s: '+e.message,'bad');
+    const v=$('verdict'); v.style.display='block';
+    v.style.cssText+=';background:#fef2f2;border:1.5px solid #fca5a5;color:#991b1b;';
+    v.innerHTML='<strong>The full download does not complete.</strong> It got '+(bytes/1048576).toFixed(2)
+      +' MB before stopping. Send John this screen.';
+  }
+  $('go').disabled=false;
+};
+</script>
+</body>
+</html>
