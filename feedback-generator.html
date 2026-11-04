@@ -138,7 +138,7 @@ async function fetchRecordsPaged(base, fromMs, onProgress){
   say(total0+' registers in all; fetching '+names.length+'…');
 
   const out = {};
-  const BATCH = 12;
+  const BATCH = 24;        // more at once: each one is tiny, the round trip is the cost
   let done = 0, failed = 0;
   for(let i=0;i<names.length;i+=BATCH){
     const slice = names.slice(i,i+BATCH);
@@ -158,7 +158,10 @@ async function fetchRecordsPaged(base, fromMs, onProgress){
   return out;
 }
 
-const WEEKS_BACK = 8;
+// The feedback reads this week plus the two before it, so four weeks is all it
+// needs. Eight was nearly all 1041 registers — the course is only ten weeks old,
+// so it saved almost nothing.
+const WEEKS_BACK = 4;
 let LOAD_ALL = false;
 let WINDOW_NOTE = '';   // why the quick load was abandoned, shown where it stays visible
 const PROXY_URL = 'https://api.anthropic.com/v1/messages';

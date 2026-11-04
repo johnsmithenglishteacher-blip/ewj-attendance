@@ -409,7 +409,7 @@ function logRoster(type, name, slot, scope){
 // wanted, then fetch those in small batches. Nothing ever depends on one huge
 // transfer, progress is visible, and a single slow register cannot sink the lot.
 async function fetchRecordsPaged(base, fromMs, onProgress){
-  const say = m => { try{ onProgress && onProgress(m); }catch(e){} };
+  const say = (m, info) => { try{ onProgress && onProgress(m, info); }catch(e){} };
   const race = (p, ms, what) => Promise.race([
     p, new Promise((_,rej)=>setTimeout(()=>rej(new Error(what+' took longer than '+Math.round(ms/1000)+'s')), ms))
   ]);
@@ -433,7 +433,7 @@ async function fetchRecordsPaged(base, fromMs, onProgress){
   say(total0+' registers in all; fetching '+names.length+'…');
 
   const out = {};
-  const BATCH = 12;
+  const BATCH = 24;        // more at once: each one is tiny, the round trip is the cost
   let done = 0, failed = 0;
   for(let i=0;i<names.length;i+=BATCH){
     const slice = names.slice(i,i+BATCH);
@@ -446,7 +446,8 @@ async function fetchRecordsPaged(base, fromMs, onProgress){
       }catch(e){ failed++; }
       done++;
     }));
-    say('Loaded '+done+' of '+names.length+(failed?(' — '+failed+' would not come'):''));
+    say('Loaded '+done+' of '+names.length+(failed?(' — '+failed+' would not come'):''),
+        {done:done, total:names.length, failed:failed});
   }
   if(!Object.keys(out).length) throw new Error('none of the '+names.length+' registers could be read');
   if(failed) say('Finished, but '+failed+' register'+(failed===1?'':'s')+' could not be read.');
@@ -457,9 +458,12 @@ async function fetchRecordsPaged(base, fromMs, onProgress){
 // /records.json ran past 60 seconds and failed, so this app was quietly falling
 // back to each device's cached copy and looking fine while being out of date.
 // Fetch them in batches instead, and keep the cache as a last resort only.
-async function fetchAllRecords(){
+async function fetchAllRecords(onCount){
   try{
-    const obj = await fetchRecordsPaged(FB_URL, 0, m => console.log('[registers]', m));
+    const obj = await fetchRecordsPaged(FB_URL, 0, (m, info) => {
+      console.log('[registers]', m);
+      if(onCount && info) onCount(info);
+    });
     const arr = Object.keys(obj).map(key=>{
       const x = obj[key];
       if(x && !x.id){
@@ -812,7 +816,7 @@ async function bootFromFirebase(){
 
   // Load all data in parallel including feedback
   let [fbRecords, fbSchedule, fbHours, fbMessages, fbTeachers] = await Promise.all([
-    fetchAllRecords().then(a=>a||fbGet('ewj-records',[])),
+    Promise.resolve(lsGet('ewj-records',[])),   // show the cached copy at once; the live ones follow
     fbGet('ewj-schedule',  BASE_SCHEDULE.map(s=>({...s,students:[...(s.students||[])]}))),
     fbGet('ewj-hours',     []),
     fbGet('ewj-messages',  []),
@@ -903,6 +907,30 @@ async function bootFromFirebase(){
   // Show live indicator
   const ld=document.getElementById('live-dot');
   if(ld){ld.style.display='inline';ld.style.color='#16a34a';ld.textContent='● Live';}
+
+  // The registers are the slow part — over a thousand of them. The app is already
+  // usable on the cached copy, so fetch the real ones in the background, newest
+  // first, and refresh the screen as they land. Nothing waits on a blank page.
+  (async()=>{
+    if(ld){ld.style.color='#b45309';ld.textContent='● Loading registers…';}
+    const fresh=await fetchAllRecords(n=>{
+      if(ld) ld.textContent='● '+n.done+'/'+n.total+' registers';
+    });
+    if(!fresh||!fresh.length){
+      if(ld){ld.style.color='#b45309';ld.textContent='● Cached only';}
+      return;
+    }
+    const byId2={};
+    state.records.forEach(r=>{ if(r&&r.id) byId2[r.id]=r; });
+    fresh.forEach(r=>{ if(r&&r.id&&r.teacher&&!isDeletedRecord(r)&&!isStaleRecord(r)) byId2[r.id]=r; });
+    state.records=Object.keys(byId2).map(k=>byId2[k])
+      .filter(r=>r&&r.id&&r.teacher&&!isDeletedRecord(r)&&!isStaleRecord(r))
+      .sort((a,b)=>(a.id||0)-(b.id||0));
+    lsSet('ewj-records',state.records);
+    mergeFeedbackIntoRecords();
+    if(ld){ld.style.color='#16a34a';ld.textContent='● Live';}
+    renderAll();
+  })();
 
   // Subscribe to live updates — re-render when any device changes data
   // Poll records every 30 seconds
@@ -1164,7 +1192,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v16.0</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v16.1</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'

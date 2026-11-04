@@ -100,7 +100,7 @@ async function fetchRecordsPaged(base, fromMs, onProgress){
   say(total0+' registers in all; fetching '+names.length+'…');
 
   const out = {};
-  const BATCH = 12;
+  const BATCH = 24;
   let done = 0, failed = 0;
   for(let i=0;i<names.length;i+=BATCH){
     const slice = names.slice(i,i+BATCH);
