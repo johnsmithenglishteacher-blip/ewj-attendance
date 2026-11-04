@@ -647,6 +647,27 @@ async function fbDeleteRecord(id){
 //
 // So: keep a mirror of the node here, apply each message at the path it names,
 // and hand the callback the rebuilt list.
+// Each of these holds a connection to Firebase open for as long as the page
+// lives. A browser allows only about six to any one host, and this app opens
+// five — so two tabs of the register was already over the line and every other
+// request to Firebase queued for ever, with no error anywhere to say why.
+// That is what made the tools "stop working" while a tab sat open elsewhere.
+// So: keep track of them, and drop them whenever the page is not in front.
+const LIVE_SUBS=[];
+function closeLiveSubs(){
+  LIVE_SUBS.forEach(s=>{ try{ if(s.es){ s.es.close(); s.es=null; } }catch(e){} });
+}
+function reopenLiveSubs(){
+  LIVE_SUBS.forEach(s=>{ if(!s.es && s.open){ try{ s.es=s.open(); }catch(e){} } });
+}
+// A background tab needs no live updates — it is not being looked at. Letting go
+// of the connections while hidden means other tabs, and the other tools, work.
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ closeLiveSubs(); }
+  else { reopenLiveSubs(); if(typeof refreshAfterWake==='function') refreshAfterWake(); }
+});
+window.addEventListener('pagehide', closeLiveSubs);
+
 function fbSubscribe(k, cb){
   const path=fbPath(k);
   if(!path) return;
@@ -736,8 +757,16 @@ function fbSubscribe(k, cb){
     }
   }
 
-  try {
+  const openIt = () => {
     const es = new EventSource(FB_URL+'/'+path+'.json', {withCredentials:false});
+    es.addEventListener('put',   e => apply(e,false));
+    es.addEventListener('patch', e => apply(e,true));
+    es.onerror = () => {};
+    return es;
+  };
+  try {
+    const es = openIt();
+    LIVE_SUBS.push({open:openIt, es:es});
     // Firebase sends the whole node on connect. If that never arrives, fetch it
     // ourselves so held-back child messages are not stranded.
     setTimeout(()=>{
@@ -747,11 +776,6 @@ function fbSubscribe(k, cb){
         .then(d=>{ if(mirror===null&&d!==null&&d!==undefined){ applyMsg({path:'/',data:d},false); } })
         .catch(()=>{});
     }, 4000);
-    es.addEventListener('put',   e => apply(e,false));
-    es.addEventListener('patch', e => apply(e,true));
-    es.onerror = () => {
-      // SSE reconnects automatically — no action needed
-    };
     return es;
   } catch(e){
     console.warn('SSE not available:', e);
@@ -1205,7 +1229,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v16.2</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v17.0</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -3672,7 +3696,7 @@ function mergeFeedbackIntoRecords(){
 
 
 function fbSubscribe_feedback(){
-  try {
+  const openIt = () => {
     const es=new EventSource(FB_URL+'/feedback.json');
     es.addEventListener('put', e=>{
       try {
@@ -3688,7 +3712,29 @@ function fbSubscribe_feedback(){
         else renderTabBar();
       } catch(err){}
     });
+    return es;
+  };
+  try {
+    const es=openIt();
+    LIVE_SUBS.push({open:openIt, es:es});
   } catch(e){ console.warn('Feedback SSE failed:',e); }
+}
+
+// Coming back to a tab that let go of its connections: catch up on what changed
+// while it was asleep, so nothing is missed.
+async function refreshAfterWake(){
+  try{
+    const fresh=await fetchRecordsDelta();
+    if(fresh && fresh.length){
+      const byId={}; state.records.forEach(r=>{ if(r&&r.id) byId[r.id]=r; });
+      fresh.forEach(r=>{ if(r&&r.id&&r.teacher&&!isDeletedRecord(r)&&!isStaleRecord(r)) byId[r.id]=r; });
+      state.records=Object.keys(byId).map(k=>byId[k]).sort((a,b)=>(a.id||0)-(b.id||0));
+      lsSet('ewj-records',state.records);
+      mergeFeedbackIntoRecords();
+    }
+    await refreshSchedule();
+    renderAll();
+  }catch(e){ console.warn('Catch-up after waking failed:',e.message); }
 }
 
 
