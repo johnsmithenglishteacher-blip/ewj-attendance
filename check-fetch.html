@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EWJ — which kind of request works?</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;padding:24px;max-width:760px;margin:0 auto;}
+  h1{font-size:20px;font-weight:800;margin-bottom:4px;}
+  .sub{font-size:13px;color:#94a3b8;margin-bottom:18px;line-height:1.55;}
+  .btn{border:none;border-radius:9px;padding:12px 22px;font-size:14px;font-family:inherit;font-weight:700;cursor:pointer;background:#4f46e5;color:#fff;margin-bottom:18px;}
+  .btn:disabled{opacity:.5;}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;overflow:hidden;}
+  th,td{text-align:left;padding:10px 13px;font-size:13px;border-bottom:1px solid #f1f5f9;}
+  th{background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;}
+  td.n{font-family:ui-monospace,Menlo,monospace;font-size:12px;}
+  .ok{color:#15803d;font-weight:700;} .bad{color:#b91c1c;font-weight:700;}
+  .verdict{border-radius:10px;padding:14px 16px;font-size:13.5px;line-height:1.65;margin-top:16px;display:none;}
+</style>
+</head>
+<body>
+<h1>Which kind of request works?</h1>
+<p class="sub">Asks the database for the same tiny number six different ways and times each one.<br>Read-only. Takes about a minute.</p>
+<button class="btn" id="go">Start</button>
+<table id="tbl"><thead><tr><th>How it asks</th><th>Time</th><th>Result</th></tr></thead><tbody></tbody></table>
+<div class="verdict" id="verdict"></div>
+<script>
+const URL_='https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app/courseStart.json';
+const WAYS=[
+  {name:'plain fetch, no options', run:()=>fetch(URL_)},
+  {name:"fetch with cache:'no-store'", run:()=>fetch(URL_,{cache:'no-store'})},
+  {name:"fetch with cache:'reload'", run:()=>fetch(URL_,{cache:'reload'})},
+  {name:'plain fetch, cache-busting ?t=', run:()=>fetch(URL_+'?t='+Date.now())},
+  {name:"with a Cache-Control header", run:()=>fetch(URL_,{headers:{'Cache-Control':'no-cache'}})},
+  {name:'XMLHttpRequest (the old way)', run:()=>new Promise((res,rej)=>{
+      const x=new XMLHttpRequest(); x.open('GET',URL_+'?x='+Date.now());
+      x.onload=()=>res({ok:x.status>=200&&x.status<300,status:x.status,text:()=>Promise.resolve(x.responseText)});
+      x.onerror=()=>rej(new Error('failed')); x.send();
+  })}
+];
+const tb=document.querySelector('#tbl tbody');
+document.getElementById('go').onclick=async()=>{
+  const btn=document.getElementById('go'); btn.disabled=true; tb.innerHTML='';
+  document.getElementById('verdict').style.display='none';
+  const out=[];
+  for(const w of WAYS){
+    const row=document.createElement('tr');
+    row.innerHTML='<td class="n">'+w.name+'</td><td class="n">…</td><td>testing…</td>';
+    tb.appendChild(row);
+    const t0=performance.now(); let ms=0, msg='', cls='', ok=false;
+    try{
+      const res=await Promise.race([ w.run(),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('no answer')),15000)) ]);
+      ms=Math.round(performance.now()-t0);
+      if(!res.ok){ msg='HTTP '+res.status; cls='bad'; }
+      else { const t=await res.text(); msg='got "'+t.slice(0,18)+'"'; cls='ok'; ok=true; }
+    }catch(e){ ms=Math.round(performance.now()-t0); msg=e.message==='no answer'?'NO ANSWER':('failed: '+e.message); cls='bad'; }
+    row.children[1].textContent=(ms/1000).toFixed(1)+'s';
+    row.children[2].innerHTML='<span class="'+cls+'">'+msg+'</span>';
+    out.push({name:w.name, ok:ok, ms:ms});
+  }
+  const good=out.filter(o=>o.ok), bad=out.filter(o=>!o.ok);
+  const v=document.getElementById('verdict'); v.style.display='block';
+  if(good.length===out.length){
+    v.style.cssText+=';background:#f0fdf4;border:1.5px solid #86efac;color:#166534;';
+    v.innerHTML='<strong>All six worked.</strong> So the database is reachable from this page right now and the trouble is intermittent. Send John this screen.';
+  } else if(good.length===0){
+    v.style.cssText+=';background:#fef2f2;border:1.5px solid #fca5a5;color:#991b1b;';
+    v.innerHTML='<strong>None of them worked</strong>, yet the same address works when typed into a tab. That means something in this browser is stopping pages from reaching the database — an extension, or a setting that treats this site differently. Send John this screen.';
+  } else {
+    v.style.cssText+=';background:#fffbeb;border:1.5px solid #fde68a;color:#92400e;';
+    v.innerHTML='<strong>Some work and some do not.</strong> Working: '+good.map(g=>g.name).join('; ')
+      +'. Failing: '+bad.map(b=>b.name).join('; ')+'. That names the exact cause — send John this screen.';
+  }
+  btn.disabled=false;
+};
+</script>
+</body>
+</html>
