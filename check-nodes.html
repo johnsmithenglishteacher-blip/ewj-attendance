@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EWJ — which parts of the database answer?</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;padding:24px;max-width:760px;margin:0 auto;}
+  h1{font-size:20px;font-weight:800;margin-bottom:4px;}
+  .sub{font-size:13px;color:#94a3b8;margin-bottom:18px;line-height:1.55;}
+  .btn{border:none;border-radius:9px;padding:12px 22px;font-size:14px;font-family:inherit;font-weight:700;cursor:pointer;background:#4f46e5;color:#fff;margin-bottom:18px;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;overflow:hidden;}
+  th,td{text-align:left;padding:10px 13px;font-size:13px;border-bottom:1px solid #f1f5f9;}
+  th{background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;}
+  td.n{font-family:ui-monospace,Menlo,monospace;}
+  .ok{color:#15803d;font-weight:700;} .slow{color:#b45309;font-weight:700;} .bad{color:#b91c1c;font-weight:700;}
+  .verdict{border-radius:10px;padding:14px 16px;font-size:13.5px;line-height:1.65;margin-top:16px;display:none;}
+</style>
+</head>
+<body>
+<h1>Which parts of the database answer?</h1>
+<p class="sub">Reads each part in turn and times it. Nothing is written or changed.<br>Each one gets 25 seconds before it is called dead, so the whole test takes a few minutes at worst.</p>
+<button class="btn" id="go">Start</button>
+<table id="tbl">
+  <thead><tr><th>Part of the database</th><th>What it holds</th><th>Time</th><th>Result</th></tr></thead>
+  <tbody></tbody>
+</table>
+<div class="verdict" id="verdict"></div>
+<script>
+const FB='https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
+const TESTS=[
+  {path:'/courseStart.json', what:'one number'},
+  {path:'/clearedAt.json', what:'one number'},
+  {path:'/teachers.json', what:'the teacher names'},
+  {path:'/paused.json', what:'paused students'},
+  {path:'/schedule.json', what:'the whole timetable'},
+  {path:'/hours.json', what:'every clock-in'},
+  {path:'/messages.json', what:'the message threads'},
+  {path:'/feedback.json', what:'saved feedback'},
+  {path:'/deletedRecords.json', what:'deleted register notes'},
+  {path:'/records.json?shallow=true', what:'register NAMES only'},
+  {path:'/records.json?orderBy=%22%24key%22&limitToLast=1', what:'the single newest register'}
+];
+const tb=document.querySelector('#tbl tbody');
+document.getElementById('go').onclick=async()=>{
+  const btn=document.getElementById('go'); btn.disabled=true; tb.innerHTML='';
+  document.getElementById('verdict').style.display='none';
+  const results=[];
+  for(const t of TESTS){
+    const row=document.createElement('tr');
+    row.innerHTML='<td class="n">'+t.path.split('?')[0]+'</td><td>'+t.what+'</td><td class="n">…</td><td>testing…</td>';
+    tb.appendChild(row);
+    const t0=performance.now();
+    let ms=0, verdict='', cls='', bytes=0;
+    try{
+      const res=await Promise.race([
+        fetch(FB+t.path,{cache:'no-store'}),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('no answer')),25000))
+      ]);
+      ms=Math.round(performance.now()-t0);
+      if(!res.ok){ verdict='HTTP '+res.status; cls='bad'; }
+      else {
+        const txt=await res.text();
+        bytes=txt.length;
+        const kb=bytes/1024;
+        verdict=(kb>1024?(kb/1024).toFixed(1)+' MB':Math.round(kb)+' KB');
+        cls = ms<2000?'ok':(ms<10000?'slow':'bad');
+      }
+    }catch(e){
+      ms=Math.round(performance.now()-t0);
+      verdict='NO ANSWER'; cls='bad';
+    }
+    row.children[2].textContent=(ms/1000).toFixed(1)+'s';
+    row.children[3].innerHTML='<span class="'+cls+'">'+verdict+'</span>';
+    results.push({path:t.path, ms:ms, ok:cls!=='bad', bytes:bytes});
+  }
+  // What does the pattern say?
+  const recs=results.filter(r=>r.path.indexOf('/records')===0);
+  const others=results.filter(r=>r.path.indexOf('/records')!==0);
+  const othersOk=others.filter(r=>r.ok).length, recsOk=recs.filter(r=>r.ok).length;
+  const v=document.getElementById('verdict'); v.style.display='block';
+  if(othersOk===others.length && recsOk===0){
+    v.style.cssText+=';background:#fffbeb;border:1.5px solid #fde68a;color:#92400e;';
+    v.innerHTML='<strong>Everything answers except the registers.</strong> The database is healthy; the records node on its own has grown past what it can serve. '
+      +'That is a size problem, and the fix is to archive the older registers out of it — not more tuning. Send John this screen.';
+  } else if(othersOk===0){
+    v.style.cssText+=';background:#fef2f2;border:1.5px solid #fca5a5;color:#991b1b;';
+    v.innerHTML='<strong>Nothing answers at all.</strong> This is the whole database, not the registers. Send John this screen.';
+  } else if(recsOk>0){
+    v.style.cssText+=';background:#f0fdf4;border:1.5px solid #86efac;color:#166534;';
+    v.innerHTML='<strong>The registers answered this time.</strong> So it is intermittent rather than broken — which points at load or throttling. Send John this screen with the times.';
+  } else {
+    v.style.cssText+=';background:#f8fafc;border:1.5px solid #e2e8f0;color:#475569;';
+    v.innerHTML='<strong>Mixed results.</strong> Send John this screen.';
+  }
+  btn.disabled=false;
+};
+</script>
+</body>
+</html>
