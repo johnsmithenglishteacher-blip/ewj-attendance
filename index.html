@@ -335,9 +335,20 @@ async function loadDeletedIds(){
 // entry from here on. Safe to run on every device: it is idempotent.
 async function migrateNumericKeys(node, prefix){
   try{
+    // Check the NAMES first — that request is tiny. Only if some are plain numbers
+    // is it worth reading the node itself, which for /records no longer completes.
+    const nRes=await Promise.race([
+      fetch(FB_URL+'/'+node+'.json?shallow=true',{cache:'no-store'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
+    ]);
+    if(!nRes.ok) return 0;
+    const nObj=await nRes.json();
+    if(!nObj) return 0;
+    const nNames=Array.isArray(nObj)?nObj.map((_,i)=>String(i)):Object.keys(nObj);
+    if(!nNames.some(k=>/^[0-9]+$/.test(k))) return 0;   // nothing old to move
     const res=await Promise.race([
       fetch(FB_URL+'/'+node+'.json',{cache:'no-store'}),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),20000))
     ]);
     if(!res.ok) return 0;
     const data=await res.json();
@@ -389,6 +400,122 @@ function logRoster(type, name, slot, scope){
     fetch(FB_URL+'/rosterEvents/'+id+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(ev)})
       .catch(()=>{});
   }catch(e){}
+}
+
+// ── Loading the registers without one giant download ──────────────────────────
+// /records.json in one request has grown past what a browser will reliably pull
+// down: it ran past 60 seconds and failed. But ?shallow=true returns only the
+// NAMES, which is tiny and quick. So: ask for the names, work out which ones are
+// wanted, then fetch those in small batches. Nothing ever depends on one huge
+// transfer, progress is visible, and a single slow register cannot sink the lot.
+async function fetchRecordsPaged(base, fromMs, onProgress){
+  const say = m => { try{ onProgress && onProgress(m); }catch(e){} };
+  const race = (p, ms, what) => Promise.race([
+    p, new Promise((_,rej)=>setTimeout(()=>rej(new Error(what+' took longer than '+Math.round(ms/1000)+'s')), ms))
+  ]);
+
+  say('Asking which registers exist…');
+  const nRes = await race(fetch(base+'/records.json?shallow=true',{cache:'no-store'}), 20000, 'the list of registers');
+  if(!nRes.ok) throw new Error('HTTP '+nRes.status+' asking for the list of registers');
+  const nameObj = await nRes.json();
+  let names = nameObj ? Object.keys(nameObj) : [];
+  if(!names.length) return {};
+
+  const total0 = names.length;
+  if(fromMs){
+    names = names.filter(k=>{
+      const n = Number(String(k).replace(/^r/,''));
+      return !isFinite(n) || n === 0 ? true : n >= fromMs;   // undateable names are kept
+    });
+  }
+  // Newest first, so the useful ones arrive even if the tail is slow.
+  names.sort((a,b)=>Number(String(b).replace(/^r/,''))-Number(String(a).replace(/^r/,'')));
+  say(total0+' registers in all; fetching '+names.length+'…');
+
+  const out = {};
+  const BATCH = 12;
+  let done = 0, failed = 0;
+  for(let i=0;i<names.length;i+=BATCH){
+    const slice = names.slice(i,i+BATCH);
+    await Promise.all(slice.map(async key=>{
+      try{
+        const r = await race(fetch(base+'/records/'+key+'.json',{cache:'no-store'}), 15000, 'a register');
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const v = await r.json();
+        if(v && typeof v === 'object') out[key] = v;
+      }catch(e){ failed++; }
+      done++;
+    }));
+    say('Loaded '+done+' of '+names.length+(failed?(' — '+failed+' would not come'):''));
+  }
+  if(!Object.keys(out).length) throw new Error('none of the '+names.length+' registers could be read');
+  if(failed) say('Finished, but '+failed+' register'+(failed===1?'':'s')+' could not be read.');
+  return out;
+}
+
+// The registers are the one node too big to fetch whole: on John's connection
+// /records.json ran past 60 seconds and failed, so this app was quietly falling
+// back to each device's cached copy and looking fine while being out of date.
+// Fetch them in batches instead, and keep the cache as a last resort only.
+async function fetchAllRecords(){
+  try{
+    const obj = await fetchRecordsPaged(FB_URL, 0, m => console.log('[registers]', m));
+    const arr = Object.keys(obj).map(key=>{
+      const x = obj[key];
+      if(x && !x.id){
+        const fromKey = Number(String(key).replace(/^r/,''));
+        if(fromKey) return Object.assign({}, x, {id:fromKey});
+      }
+      return x;
+    }).filter(Boolean);
+    arr.sort((a,b)=>(a.id||0)-(b.id||0));
+    return arr.length ? arr : null;
+  }catch(e){
+    console.warn('Could not load the registers in batches:', e.message);
+    return null;
+  }
+}
+
+// The background refresh must not re-fetch 750 registers every thirty seconds.
+// Ask for the names only, then pull just the ones this device has never seen plus
+// anything from the last two days, which is where edits actually happen.
+async function fetchRecordsDelta(){
+  try{
+    const res=await Promise.race([
+      fetch(FB_URL+'/records.json?shallow=true',{cache:'no-store'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),15000))
+    ]);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const obj=await res.json();
+    const names=obj?Object.keys(obj):[];
+    if(!names.length) return null;
+    const known={}; (state.records||[]).forEach(r=>{ if(r&&r.id) known['r'+r.id]=true; });
+    const recent=Date.now()-2*86400000;
+    const wanted=names.filter(k=>{
+      if(!known[k]) return true;                       // never seen here
+      const n=Number(String(k).replace(/^r/,''));
+      return isFinite(n)&&n>=recent;                   // or new enough to have been edited
+    });
+    if(!wanted.length) return [];
+    const out=[]; const BATCH=12;
+    for(let i=0;i<wanted.length;i+=BATCH){
+      await Promise.all(wanted.slice(i,i+BATCH).map(async key=>{
+        try{
+          const r=await Promise.race([
+            fetch(FB_URL+'/records/'+key+'.json',{cache:'no-store'}),
+            new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),12000))
+          ]);
+          if(!r.ok) return;
+          const v=await r.json();
+          if(v&&typeof v==='object'){
+            if(!v.id){ const n=Number(String(key).replace(/^r/,'')); if(n) v.id=n; }
+            out.push(v);
+          }
+        }catch(e){}
+      }));
+    }
+    return out;
+  }catch(e){ console.warn('Register refresh failed:',e.message); return null; }
 }
 
 // Read from Firebase (5s timeout)
@@ -685,7 +812,7 @@ async function bootFromFirebase(){
 
   // Load all data in parallel including feedback
   let [fbRecords, fbSchedule, fbHours, fbMessages, fbTeachers] = await Promise.all([
-    fbGet('ewj-records',   []),
+    fetchAllRecords().then(a=>a||fbGet('ewj-records',[])),
     fbGet('ewj-schedule',  BASE_SCHEDULE.map(s=>({...s,students:[...(s.students||[])]}))),
     fbGet('ewj-hours',     []),
     fbGet('ewj-messages',  []),
@@ -714,7 +841,7 @@ async function bootFromFirebase(){
   await migrateNumericKeys('hours','h');
   if(tidied){
     // The list we just fetched is out of date now; take it again.
-    try{ const again=await fbGet('ewj-records', null); if(again&&again.length) fbRecords=again; }catch(e){}
+    try{ const again=await fetchAllRecords(); if(again&&again.length) fbRecords=again; }catch(e){}
   }
   const beforeClear=r=>isStaleRecord(r);
 
@@ -782,8 +909,14 @@ async function bootFromFirebase(){
   setInterval(async()=>{
     if(_writeLock) return; // don't poll during writes
     try {
-      const data = await fbGet('ewj-records', null);
-      if(!data||!data.length) return; // never replace with empty
+      const fresh = await fetchRecordsDelta();
+      if(!fresh) return;              // the refresh failed; keep what is on screen
+      if(!fresh.length) return;       // nothing new since last time
+      // Merge: anything new is added, anything changed replaces its old copy.
+      const byId={}; state.records.forEach(r=>{ if(r&&r.id) byId[r.id]=r; });
+      fresh.forEach(r=>{ if(r&&r.id) byId[r.id]=r; });
+      const data = Object.keys(byId).map(k=>byId[k]);
+      if(!data.length) return;
       // Smart merge: for each record, keep whichever version has more content
       const localMap={};state.records.forEach(r=>{if(r&&r.id)localMap[r.id]=r;});
       const merged=data.map(r=>{
@@ -1031,7 +1164,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v15.2</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v16.0</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'

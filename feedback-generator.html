@@ -107,6 +107,57 @@
 const DEFAULT_FB_URL = 'https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
 // How much history this page pulls down. Eight weeks covers this week's comments
 // and the two previous weeks the feedback builds on, with room to spare.
+// ── Loading the registers without one giant download ──────────────────────────
+// /records.json in one request has grown past what a browser will reliably pull
+// down: it ran past 60 seconds and failed. But ?shallow=true returns only the
+// NAMES, which is tiny and quick. So: ask for the names, work out which ones are
+// wanted, then fetch those in small batches. Nothing ever depends on one huge
+// transfer, progress is visible, and a single slow register cannot sink the lot.
+async function fetchRecordsPaged(base, fromMs, onProgress){
+  const say = m => { try{ onProgress && onProgress(m); }catch(e){} };
+  const race = (p, ms, what) => Promise.race([
+    p, new Promise((_,rej)=>setTimeout(()=>rej(new Error(what+' took longer than '+Math.round(ms/1000)+'s')), ms))
+  ]);
+
+  say('Asking which registers exist…');
+  const nRes = await race(fetch(base+'/records.json?shallow=true',{cache:'no-store'}), 20000, 'the list of registers');
+  if(!nRes.ok) throw new Error('HTTP '+nRes.status+' asking for the list of registers');
+  const nameObj = await nRes.json();
+  let names = nameObj ? Object.keys(nameObj) : [];
+  if(!names.length) return {};
+
+  const total0 = names.length;
+  if(fromMs){
+    names = names.filter(k=>{
+      const n = Number(String(k).replace(/^r/,''));
+      return !isFinite(n) || n === 0 ? true : n >= fromMs;   // undateable names are kept
+    });
+  }
+  // Newest first, so the useful ones arrive even if the tail is slow.
+  names.sort((a,b)=>Number(String(b).replace(/^r/,''))-Number(String(a).replace(/^r/,'')));
+  say(total0+' registers in all; fetching '+names.length+'…');
+
+  const out = {};
+  const BATCH = 12;
+  let done = 0, failed = 0;
+  for(let i=0;i<names.length;i+=BATCH){
+    const slice = names.slice(i,i+BATCH);
+    await Promise.all(slice.map(async key=>{
+      try{
+        const r = await race(fetch(base+'/records/'+key+'.json',{cache:'no-store'}), 15000, 'a register');
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const v = await r.json();
+        if(v && typeof v === 'object') out[key] = v;
+      }catch(e){ failed++; }
+      done++;
+    }));
+    say('Loaded '+done+' of '+names.length+(failed?(' — '+failed+' would not come'):''));
+  }
+  if(!Object.keys(out).length) throw new Error('none of the '+names.length+' registers could be read');
+  if(failed) say('Finished, but '+failed+' register'+(failed===1?'':'s')+' could not be read.');
+  return out;
+}
+
 const WEEKS_BACK = 8;
 let LOAD_ALL = false;
 let WINDOW_NOTE = '';   // why the quick load was abandoned, shown where it stays visible
@@ -150,47 +201,20 @@ async function loadRecords() {
         () => rej(new Error('no reply after ' + seconds + ' seconds')), seconds * 1000))
     ]);
 
-    // Only the recent registers, unless the whole course is asked for. A register's
-    // name in the database is r + the millisecond it was saved, and they are all the
-    // same length, so ordering by name is ordering by date. Eight weeks instead of
-    // the whole course is the difference between a page that opens and one that
-    // sits there, especially on a phone.
+    // The whole node in one request is no longer downloadable, so the registers
+    // come in batches instead. Eight weeks by default; the button below loads all.
     const windowMs = LOAD_ALL ? 0 : (Date.now() - WEEKS_BACK * 7 * 86400000);
-    const recUrl = windowMs
-      ? FB_URL() + '/records.json?orderBy=' + encodeURIComponent('"$key"')
-        + '&startAt=' + encodeURIComponent('"r' + windowMs + '"')
-      : FB_URL() + '/records.json';
-    log(windowMs ? ('Loading the last ' + WEEKS_BACK + ' weeks …') : 'Loading the whole course …');
-    // Asking Firebase to sort by name costs it real work on a node this size, and
-    // on a slow connection it simply does not come back. It is an optimisation,
-    // not a requirement: give it a short go, and if it will not play, load the lot.
-    let rRes = null, usedWindow = !!windowMs;
-    if (windowMs) {
-      try { rRes = await get(recUrl, 12); }
-      catch(e) {
-        WINDOW_NOTE = 'Asking only for the recent weeks timed out, so the whole course was loaded instead. Nothing is missing — it just took longer.';
-        rRes = null; usedWindow = false;
-      }
-      if (rRes && !rRes.ok) {
-        WINDOW_NOTE = 'The database would not sort by date (HTTP ' + rRes.status + '), so the whole course was loaded instead. Nothing is missing.';
-        rRes = null; usedWindow = false;
-      }
+    let rData;
+    try{
+      rData = await fetchRecordsPaged(FB_URL(), windowMs, m => log(m));
+    }catch(e){
+      throw new Error('Could not read the registers \u2014 ' + e.message + '.\n\n'
+        + 'Address: ' + FB_URL() + '/records.json\n\n'
+        + 'If the Attendance Register itself works on this computer, the database is fine and '
+        + 'something in this browser is stopping this page. An ad-blocking or privacy extension '
+        + 'is the usual cause \u2014 try a Private window.');
     }
-    if (!rRes) {
-      try { rRes = await get(FB_URL() + '/records.json', 60); }
-      catch(e) {
-        throw new Error('Could not read the registers — ' + e.message + '.\n\n'
-          + 'Address: ' + FB_URL() + '/records.json\n\n'
-          + 'If the Attendance Register itself works on this computer, the database is fine and '
-          + 'something in this browser is stopping this page. An ad-blocking or privacy extension '
-          + 'is the usual cause — try a Private window.');
-      }
-    }
-    if (rRes.status === 401 || rRes.status === 403) {
-      throw new Error('Firebase refused the request (HTTP ' + rRes.status + '). The database rules are probably still locked — open Firebase → Realtime Database → Rules and set .read and .write back to true.');
-    }
-    if (!rRes.ok) throw new Error('Firebase returned HTTP ' + rRes.status);
-    const rData = await rRes.json();
+    const usedWindow = !!windowMs;
 
     // Saved feedback is a convenience, not a requirement: each record also carries
     // its own copy. If this address is blocked or slow, carry on without it.
@@ -202,15 +226,7 @@ async function loadRecords() {
       console.warn('feedback.json unavailable:', e.message);
     }
 
-    let rDataUsed = rData;
-    // A database that will not sort by name, or a course whose oldest registers
-    // still sit under plain numbers, would come back empty. Take the lot rather
-    // than show nothing.
-    if (usedWindow && (!rDataUsed || !Object.keys(rDataUsed).length)) {
-      log('The database would not hand over just the recent ones — loading all of them.');
-      const allRes = await get(FB_URL() + '/records.json', 45);
-      if (allRes.ok) rDataUsed = await allRes.json();
-    }
+    const rDataUsed = rData;
     const allRecs = rDataUsed ? (Array.isArray(rDataUsed) ? rDataUsed : Object.values(rDataUsed)).filter(r => r && r.teacher && !r.isPlanning) : [];
     records = allRecs.filter(hasRealComment);
     // John is the CEO, not someone to chase for lesson comments — he is never listed
