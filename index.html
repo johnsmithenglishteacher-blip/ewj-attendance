@@ -972,7 +972,11 @@ async function bootFromFirebase(){
   // Subscribe to live updates — re-render when any device changes data
   // Poll records every 30 seconds
   setInterval(async()=>{
-    if(_writeLock) return; // don't poll during writes
+    if(_writeLock) return;      // don't poll during writes
+    // A tab nobody is looking at does not need checking. This used to run every
+    // 30 seconds in EVERY open tab and download every record each time — about
+    // 8 GB a day from one tab left open, which is what ran up the Firebase bill.
+    if(document.hidden) return; // the catch-up on waking handles what was missed
     try {
       const fresh = await fetchRecordsDelta();
       if(!fresh) return;              // the refresh failed; keep what is on screen
@@ -1229,7 +1233,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v17.0</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v17.1</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
