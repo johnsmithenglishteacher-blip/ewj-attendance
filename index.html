@@ -963,7 +963,7 @@ async function bootFromFirebase(){
     }
     const byId2={};
     state.records.forEach(r=>{ if(r&&r.id) byId2[r.id]=r; });
-    fresh.forEach(r=>{ if(r&&r.id&&r.teacher&&!isDeletedRecord(r)&&!isStaleRecord(r)) byId2[r.id]=r; });
+    fresh.forEach(r=>{ if(r&&r.id&&r.teacher&&!isDeletedRecord(r)&&!isStaleRecord(r)) byId2[r.id]=mergeRecord(byId2[r.id], r); });
     state.records=Object.keys(byId2).map(k=>byId2[k])
       .filter(r=>r&&r.id&&r.teacher&&!isDeletedRecord(r)&&!isStaleRecord(r))
       .sort((a,b)=>(a.id||0)-(b.id||0));
@@ -987,7 +987,7 @@ async function bootFromFirebase(){
       if(!fresh.length) return;       // nothing new since last time
       // Merge: anything new is added, anything changed replaces its old copy.
       const byId={}; state.records.forEach(r=>{ if(r&&r.id) byId[r.id]=r; });
-      fresh.forEach(r=>{ if(r&&r.id) byId[r.id]=r; });
+      fresh.forEach(r=>{ if(r&&r.id) byId[r.id]=mergeRecord(byId[r.id], r); });
       const data = Object.keys(byId).map(k=>byId[k]);
       if(!data.length) return;
       // Smart merge: for each record, keep whichever version has more content
@@ -1211,6 +1211,29 @@ async function clearPlaceholderComments(onProgress){
 // blank. On a bad connection the comments were simply lost, silently. Now: send
 // it, read it back, and only then say it is saved. If it fails it is kept in an
 // outbox on the device and retried until it lands.
+// When a copy from the database meets the copy on this device, the database
+// normally wins. There is one exception that matters enormously: a comment the
+// teacher has just written and that has not reached the database yet. Letting
+// the server's blank overwrite it loses their words from the screen AND from
+// this device, which is exactly how Friday 6 Nov's comments disappeared. The
+// original 30-second poll guarded against this; two merges added on 4 Nov did
+// not, and that was the regression.
+function mergeRecord(local, fresh){
+  if(!local) return fresh;
+  if(!fresh) return local;
+  const localHas = !!(local.comment && String(local.comment).trim());
+  const freshHas = !!(fresh.comment && String(fresh.comment).trim());
+  if(localHas && !freshHas){
+    // Keep their words, but take everything else the database knows.
+    return Object.assign({}, fresh, {
+      comment: local.comment,
+      commentDone: local.commentDone,
+      commentAt: local.commentAt
+    });
+  }
+  return fresh;
+}
+
 const PENDING_KEY='ewj-pending-comments';
 function getPendingComments(){ const v=lsGet(PENDING_KEY,[]); return Array.isArray(v)?v:[]; }
 function setPendingComments(list){ lsSet(PENDING_KEY, list); }
@@ -1293,7 +1316,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v18.0</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v18.1</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -3831,7 +3854,7 @@ async function refreshAfterWake(){
     const fresh=await fetchRecordsDelta();
     if(fresh && fresh.length){
       const byId={}; state.records.forEach(r=>{ if(r&&r.id) byId[r.id]=r; });
-      fresh.forEach(r=>{ if(r&&r.id&&r.teacher&&!isDeletedRecord(r)&&!isStaleRecord(r)) byId[r.id]=r; });
+      fresh.forEach(r=>{ if(r&&r.id&&r.teacher&&!isDeletedRecord(r)&&!isStaleRecord(r)) byId[r.id]=mergeRecord(byId[r.id], r); });
       state.records=Object.keys(byId).map(k=>byId[k]).sort((a,b)=>(a.id||0)-(b.id||0));
       lsSet('ewj-records',state.records);
       mergeFeedbackIntoRecords();
