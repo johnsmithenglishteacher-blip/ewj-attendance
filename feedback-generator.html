@@ -236,7 +236,11 @@ async function loadRecords() {
     // as missing one and never receives a reminder.
     // A chased class with only a placeholder is still missing its comment, so it
     // stays on the list — it just is not chased twice in the same breath.
-    missingCommentRecs = allRecs.filter(r => !hasRealComment(r) && !r.nudgeSent && r.teacher !== 'John');
+    // A register that was reminded about and STILL has no comment is the most
+    // overdue one there is — it used to be dropped from this list for ever the
+    // moment a reminder went out, so the lessons that most needed chasing were
+    // the only ones John could not see. They stay now, marked as already chased.
+    missingCommentRecs = allRecs.filter(r => !hasRealComment(r) && r.teacher !== 'John');
     feedback = {};
     if (fData) Object.values(fData).forEach(f => { if (f && f.recordId) feedback[f.recordId] = f; });
     records.forEach(r => {
@@ -665,6 +669,16 @@ async function generateAll() {
   renderList();
 }
 
+// "06/11/2026 18:14" — the format the reminder writes. Returns days ago, or null.
+function daysSinceNudge(r){
+  const raw = (r && r.nudgeSentAt) ? String(r.nudgeSentAt) : '';
+  const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(!m) return null;
+  const when = new Date(Number(m[3]), Number(m[2])-1, Number(m[1]));
+  if(isNaN(when)) return null;
+  return Math.floor((Date.now() - when.getTime()) / 86400000);
+}
+
 function renderMissingList() {
   const sec = document.getElementById('missingSection');
   const list = document.getElementById('missingList');
@@ -674,7 +688,13 @@ function renderMissingList() {
   const teacher = document.getElementById('filterTeacher').value;
   let visible = missingCommentRecs;
   if (teacher) visible = visible.filter(r => r.teacher === teacher);
-  visible = visible.sort((a, b) => b.id - a.id);
+  // Already chased and still nothing — those come first.
+  visible = visible.slice().sort((a, b) => {
+    const an = (a.nudgeSent || nudges[a.id]) ? 1 : 0;
+    const bn = (b.nudgeSent || nudges[b.id]) ? 1 : 0;
+    if (an !== bn) return bn - an;
+    return b.id - a.id;
+  });
 
   if (!visible.length) { list.innerHTML = '<div class="empty">No missing comments for this teacher.</div>'; return; }
 
@@ -687,7 +707,19 @@ function renderMissingList() {
         '<span style="background:#ede9fe;color:#7c3aed;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;">No comment</span>' +
       '</div>' +
       '<div style="font-size:12px;color:#94a3b8;margin-bottom:8px;">' + (r.students||[]).length + ' students · ' + (r.students||[]).filter(s=>s.status==='absent'&&s.flag!=='dropped').length + ' absent</div>' +
-      (saved ? '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:8px 10px;font-size:13px;color:#15803d;margin-bottom:8px;">✅ Nudge sent: ' + saved + '</div>' : '') +
+      (function(){
+        const days = daysSinceNudge(r);
+        if (r.nudgeSent || days !== null) {
+          const when = r.nudgeSentAt ? (' on ' + r.nudgeSentAt) : '';
+          const howLong = days === null ? '' : (days === 0 ? ' — earlier today'
+            : days === 1 ? ' — 1 day ago, still nothing'
+            : ' — ' + days + ' days ago, still nothing');
+          return '<div style="background:#fff7ed;border:1.5px solid #fdba74;border-radius:8px;padding:8px 10px;font-size:13px;color:#9a3412;margin-bottom:8px;">'
+            + '⏰ Already reminded' + when + howLong + '</div>';
+        }
+        return '';
+      })() +
+      (saved ? '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:8px 10px;font-size:13px;color:#15803d;margin-bottom:8px;">✅ Reminder sent just now: ' + saved + '</div>' : '') +
       '<textarea id="nudge-' + r.id + '" style="width:100%;padding:8px 10px;border:1.5px solid #ede9fe;border-radius:8px;font-size:13px;font-family:inherit;resize:none;min-height:72px;outline:none;display:block;margin-bottom:8px;" placeholder="Write a reminder to ' + r.teacher + '…">' + (saved || defaultMsg) + '</textarea>' +
       '<button class="btn" style="background:#7c3aed;color:#fff;" onclick="sendNudge(\'' + r.id + '\', \'' + r.teacher + '\')">💬 Send reminder to ' + r.teacher + '</button>' +
       '</div>';
@@ -722,8 +754,9 @@ async function sendNudge(recordId, teacher) {
     } else {
       log('Reminder sent, but the register for ' + teacher + ' no longer exists — not marking it.');
     }
-    const idx = missingCommentRecs.findIndex(r => String(r.id) === String(recordId));
-    if (idx !== -1) missingCommentRecs.splice(idx, 1);
+    // Keep it on the list — it still has no comment. Just mark it as chased.
+    const rec = missingCommentRecs.find(r => String(r.id) === String(recordId));
+    if (rec) { rec.nudgeSent = true; rec.nudgeSentAt = dateStr + ' ' + timeStr; }
     nudges[recordId] = text;
     log('Reminder sent to ' + teacher);
     btn.textContent = '✅ Sent!';
@@ -740,8 +773,17 @@ async function sendAllNudges() {
   const teacher = document.getElementById('filterTeacher').value;
   let targets = missingCommentRecs;
   if (teacher) targets = targets.filter(r => r.teacher === teacher);
-  targets = targets.filter(r => !nudges[r.id]);
-  if (!targets.length) { log('No new reminders to send.'); return; }
+  // Don't nag: skip anything already reminded in the last 3 days. They stay on
+  // the list so they can be seen and chased by hand, just not automatically.
+  const skipped = targets.filter(r => { const d = daysSinceNudge(r); return nudges[r.id] || (d !== null && d < 3); });
+  targets = targets.filter(r => { const d = daysSinceNudge(r); return !nudges[r.id] && (d === null || d >= 3); });
+  if (!targets.length) {
+    log(skipped.length
+      ? ('Nothing to send \u2014 all ' + skipped.length + ' were reminded within the last 3 days. Send one by hand if it is urgent.')
+      : 'No new reminders to send.');
+    return;
+  }
+  if (skipped.length) log('Skipping ' + skipped.length + ' reminded in the last 3 days.');
   const btn = document.getElementById('sendAllBtn');
   const progress = document.getElementById('sendAllProgress');
   btn.disabled = true;
@@ -782,7 +824,9 @@ async function sendAllNudges() {
   btn.disabled = false;
   btn.textContent = '✅ All sent';
   btn.style.background = '#16a34a';
-  log('Sent ' + sent + ' reminders.');
+  // The log shows one line at a time, so the skip note must survive to the end.
+  log('Sent ' + sent + ' reminder' + (sent===1?'':'s')
+      + (skipped.length ? (' \u2014 skipped ' + skipped.length + ' reminded in the last 3 days.') : '.'));
   setTimeout(() => { renderMissingList(); progress.style.display = 'none'; btn.textContent = '💬 Send all reminders'; btn.style.background = '#7c3aed'; }, 2000);
 }
 </script>

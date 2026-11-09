@@ -664,7 +664,8 @@ function reopenLiveSubs(){
 // of the connections while hidden means other tabs, and the other tools, work.
 document.addEventListener('visibilitychange', ()=>{
   if(document.hidden){ closeLiveSubs(); }
-  else { reopenLiveSubs(); if(typeof refreshAfterWake==='function') refreshAfterWake(); }
+  else { reopenLiveSubs(); if(typeof refreshAfterWake==='function') refreshAfterWake();
+         if(typeof flushPendingComments==='function') flushPendingComments(true); }
 });
 window.addEventListener('pagehide', closeLiveSubs);
 
@@ -927,6 +928,9 @@ async function bootFromFirebase(){
   // Re-build the app shell
   buildAppShell();
   renderAll();
+
+  // Anything a teacher wrote that never reached the database: send it now.
+  try{ flushPendingComments(true); }catch(e){}
 
   // Show live indicator
   const ld=document.getElementById('live-dot');
@@ -1201,6 +1205,62 @@ async function clearPlaceholderComments(onProgress){
   return {done:done,failed:failed,total:list.length};
 }
 
+// A teacher's lesson comment used to be shown as saved BEFORE it was sent, and
+// nothing ever checked that it arrived. It was also written into their own
+// browser storage, so it still looked saved to them afterwards while John saw a
+// blank. On a bad connection the comments were simply lost, silently. Now: send
+// it, read it back, and only then say it is saved. If it fails it is kept in an
+// outbox on the device and retried until it lands.
+const PENDING_KEY='ewj-pending-comments';
+function getPendingComments(){ const v=lsGet(PENDING_KEY,[]); return Array.isArray(v)?v:[]; }
+function setPendingComments(list){ lsSet(PENDING_KEY, list); }
+function queueComment(entry){
+  const list=getPendingComments().filter(x=>x && String(x.id)!==String(entry.id));
+  list.push(entry); setPendingComments(list);
+}
+function unqueueComment(id){
+  setPendingComments(getPendingComments().filter(x=>x && String(x.id)!==String(id)));
+}
+
+// Write one comment and confirm the database really has it.
+async function pushComment(id, comment, commentAt){
+  let keys=await recordKeysFor(id);
+  if(!keys.length) keys=['r'+id];
+  const key=keys[0];
+  const body=JSON.stringify({comment:comment, commentDone:!!(comment&&comment.trim()), commentAt:commentAt||null, nudgeSent:null, nudgeSentAt:null});
+  const res=await Promise.race([
+    fetch(FB_URL+'/records/'+key+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:body}),
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('no reply after 12 seconds')),12000))
+  ]);
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  // Read it back. Without this we are only hoping.
+  const check=await Promise.race([
+    fetch(FB_URL+'/records/'+key+'/comment.json',{cache:'no-store'}),
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('could not confirm it')),12000))
+  ]);
+  const saved=check.ok?await check.json():null;
+  if(String(saved||'')!==String(comment||'')) throw new Error('it did not arrive');
+  return true;
+}
+
+// Anything stranded in the outbox, tried again.
+async function flushPendingComments(quiet){
+  const list=getPendingComments();
+  if(!list.length) return {done:0,left:0};
+  let done=0;
+  for(const item of list){
+    try{
+      await pushComment(item.id, item.comment, item.commentAt);
+      unqueueComment(item.id);
+      done++;
+    }catch(e){ console.warn('A comment is still waiting to be saved:', e.message); }
+  }
+  const left=getPendingComments().length;
+  if(done && !quiet) showFlash('\u2713 '+done+' saved comment'+(done===1?'':'s')+' finally went through');
+  if(done) { try{ renderLog(); renderTabBar(); }catch(e){} }
+  return {done:done,left:left};
+}
+
 async function refreshSchedule(){
   try{
     const res=await Promise.race([
@@ -1233,7 +1293,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v17.1</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v18.0</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -1923,6 +1983,30 @@ function renderLog(){
       +'so they cannot be shown. Everything else is below.';
     wrap.appendChild(w);
   }
+  // Comments this device wrote that never reached the database. The teacher must
+  // know, because to them it looked saved.
+  const waiting=getPendingComments();
+  if(waiting.length){
+    const wb=document.createElement('div');
+    wb.style.cssText='background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;';
+    const wm=document.createElement('div');
+    wm.style.cssText='font-size:12.5px;color:#991b1b;line-height:1.5;';
+    wm.innerHTML='<strong>'+waiting.length+' comment'+(waiting.length===1?'':'s')+' not yet saved</strong> \u2014 '
+      +escHtml(waiting.map(x=>x.course+' '+x.date).join(', '))
+      +'. They are kept on this device and will go as soon as the connection allows.';
+    const wbtn=document.createElement('button');
+    wbtn.style.cssText='background:#dc2626;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;';
+    wbtn.textContent='Try now';
+    wbtn.onclick=async()=>{
+      wbtn.disabled=true; wbtn.textContent='Sending\u2026';
+      const res=await flushPendingComments();
+      if(res.left) showFlash('\u26a0 '+res.left+' still waiting');
+      renderLog();
+    };
+    wb.appendChild(wm); wb.appendChild(wbtn);
+    wrap.appendChild(wb);
+  }
+
   // Registers whose comment is really a reminder note, not a teacher's words.
   if(!at){
     const ph=placeholderRecords();
@@ -2190,28 +2274,44 @@ function renderLog(){
       const btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:7px;';
       const saveBtn=document.createElement('button');saveBtn.style.cssText='background:#4f46e5;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-family:inherit;font-weight:700;cursor:pointer;';saveBtn.textContent='Save comment';
       saveBtn.onclick=async()=>{
+        const text=logState.draft;
+        if(!text.trim()){ alert('Write something first.'); return; }
         const now=new Date();
-        const updated=state.records.map(rec=>rec.id===r.id?{...rec,comment:logState.draft,commentDone:logState.draft.trim().length>0,commentAt:logState.draft.trim()?fmtD(now)+' '+fmtT(now):null}:rec);
-        // Update local state immediately
-        state.records=updated;
-        lsSet('ewj-records',updated);
-        logState.editing=null;logState.draft='';
-        renderLog();renderTabBar();
-        // Write to Firebase - try both r{id} and {id} key formats for compatibility
-        const updatedRec=updated.find(rec=>rec.id===r.id);
-        if(updatedRec){
-          acquireWriteLock();
-          const body=JSON.stringify(updatedRec);
-          const headers={'Content-Type':'application/json'};
-          // Write to r{id} path (new format)
-          fetch(FB_URL+'/records/r'+updatedRec.id+'.json',{method:'PUT',headers,body})
-            .then(res=>{ if(!res.ok) throw new Error('HTTP '+res.status); console.log('Comment saved to Firebase'); })
-            .catch(e=>{
-              console.warn('Comment save failed, retrying...',e.message);
-              // Retry once after 2 seconds
-              setTimeout(()=>fetch(FB_URL+'/records/r'+updatedRec.id+'.json',{method:'PUT',headers,body}).catch(()=>{}),2000);
-            });
+        const stamp=fmtD(now)+' '+fmtT(now);
+        saveBtn.disabled=true; saveBtn.style.opacity='.6'; saveBtn.textContent='Saving\u2026';
+        acquireWriteLock();
+        let ok=false, why='';
+        try{
+          await pushComment(r.id, text, stamp);
+          ok=true;
+        }catch(e){ why=e.message; }
+
+        if(ok){
+          // Confirmed in the database — only now is it safe to say so.
+          unqueueComment(r.id);
+          state.records=state.records.map(rec=>rec.id===r.id
+            ?{...rec,comment:text,commentDone:true,commentAt:stamp,nudgeSent:false,nudgeSentAt:null}:rec);
+          lsSet('ewj-records',state.records);
+          logState.editing=null; logState.draft='';
+          showFlash('\u2713 Comment saved');
+          renderLog(); renderTabBar();
+          return;
         }
+
+        // It did not arrive. Keep the words, keep the editor open, say so plainly,
+        // and hold it in the outbox so it goes as soon as the connection allows.
+        queueComment({id:r.id, comment:text, commentAt:stamp, teacher:r.teacher, course:r.course, date:r.date});
+        state.records=state.records.map(rec=>rec.id===r.id
+          ?{...rec,comment:text,commentDone:false,commentAt:stamp}:rec);
+        lsSet('ewj-records',state.records);
+        saveBtn.disabled=false; saveBtn.style.opacity='1'; saveBtn.textContent='Try saving again';
+        let warn=ed.querySelector('.cmt-warn');
+        if(!warn){
+          warn=document.createElement('div'); warn.className='cmt-warn';
+          warn.style.cssText='background:#fef2f2;border:1.5px solid #fca5a5;border-radius:8px;padding:9px 11px;font-size:12.5px;color:#991b1b;margin-top:8px;line-height:1.5;';
+          ed.appendChild(warn);
+        }
+        warn.textContent='\u26a0 NOT saved \u2014 '+why+'. Your words are kept and will be sent automatically when the connection comes back. Do not close this without checking.';
       };
       btnRow.appendChild(saveBtn);
       const cancelBtn=document.createElement('button');cancelBtn.style.cssText='background:#fff;color:#64748b;border:1.5px solid #e2e8f0;border-radius:8px;padding:8px 13px;font-size:13px;font-family:inherit;cursor:pointer;';cancelBtn.textContent='Cancel';cancelBtn.onclick=()=>{logState.editing=null;logState.draft='';renderLog();};btnRow.appendChild(cancelBtn);
