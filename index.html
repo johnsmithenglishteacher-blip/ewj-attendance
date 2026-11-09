@@ -495,8 +495,24 @@ async function fetchRecordsDelta(){
     if(!names.length) return null;
     const known={}; (state.records||[]).forEach(r=>{ if(r&&r.id) known['r'+r.id]=true; });
     const recent=Date.now()-2*86400000;
+    // A register this device believes has NO comment is the one most likely to
+    // have gained one since — written by the teacher on their own device after
+    // this page last looked. Checking only the last two days meant a comment
+    // added on Friday was still invisible here on Monday, which is exactly how
+    // Friday 6 Nov looked like lost work when nothing had been lost at all.
+    // There are few of these, so re-checking them costs almost nothing.
+    const blankWindow=Date.now()-30*86400000;
+    const blanks={}; let blankCount=0;
+    (state.records||[]).slice().sort((a,b)=>(b.id||0)-(a.id||0)).forEach(r=>{
+      if(blankCount>=80) return;
+      if(!r||!r.id) return;
+      if(r.comment&&String(r.comment).trim()) return;   // already has one here
+      if((r.id||0)<blankWindow) return;                 // too old to still be coming
+      blanks['r'+r.id]=true; blankCount++;
+    });
     const wanted=names.filter(k=>{
       if(!known[k]) return true;                       // never seen here
+      if(blanks[k]) return true;                       // we hold a blank — check for a comment
       const n=Number(String(k).replace(/^r/,''));
       return isFinite(n)&&n>=recent;                   // or new enough to have been edited
     });
@@ -1316,7 +1332,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v18.1</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v18.2</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
