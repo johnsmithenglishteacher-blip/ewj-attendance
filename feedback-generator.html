@@ -18,7 +18,7 @@
   .badge-done{background:#f0fdf4;color:#15803d;}
   .badge-generating{background:#eef2ff;color:#4f46e5;}
   .comment{font-size:13px;color:#475569;line-height:1.6;margin-bottom:10px;background:#f8fafc;border-radius:8px;padding:10px;}
-  .feedback-box{background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;padding:10px;font-size:13px;color:#3730a3;line-height:1.6;margin-bottom:10px;}
+  .feedback-box{background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;padding:10px;font-size:13px;color:#3730a3;line-height:1.6;margin-bottom:10px;white-space:pre-wrap;}
   .feedback-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;margin-bottom:4px;}
   textarea{width:100%;padding:10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;min-height:80px;outline:none;line-height:1.6;}
   textarea:focus{border-color:#4f46e5;}
@@ -73,6 +73,15 @@
 
 <div id="statsDiv" style="display:none">
   <div class="stats" id="statsEl"></div>
+
+  <div id="askSection" style="display:none;background:#fff;border:1.5px solid #fde68a;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+      <span id="askTitle" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#92400e;flex:1;">To ask in person</span>
+      <button class="btn" style="background:#fff;color:#92400e;border:1.5px solid #fde68a;font-size:12px;padding:5px 12px;" onclick="copyAskList()" id="askCopyBtn">Copy the list</button>
+    </div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:10px;">Things you asked a teacher to tell you about when you meet. Tick each one off once you have had the conversation.</div>
+    <div id="askList"></div>
+  </div>
 
   <div class="controls">
     <select id="filterTeacher" class="filter" onchange="renderList()">
@@ -278,6 +287,8 @@ async function loadRecords() {
     tSel.innerHTML = '<option value="">All teachers</option>' + teachers.map(t => '<option>' + t + '</option>').join('');
 
     document.getElementById('statsDiv').style.display = '';
+    await loadQuestions();
+    renderAskList();
     updateStats();
     renderList();
   } catch(e) {
@@ -444,49 +455,68 @@ function historyBlock(r){
   return h;
 }
 
-async function callClaude(r) {
-  const absent = (r.students || []).filter(s => s.status === 'absent' && s.flag !== 'dropped').map(s => s.name);
-  const late = (r.students || []).filter(s => s.status === 'late').map(s => s.name);
-  const present = (r.students || []).filter(s => s.status === 'present').map(s => s.name);
+// ── John's voice ─────────────────────────────────────────────────────────────
+// The old prompt fixed three paragraphs and two set phrases ("What I particularly
+// like is…", "🔄 Follow-up for next lesson:"), so every message had the same
+// skeleton and the same length whatever the lesson had been like. Teachers were
+// reading the same letter with different nouns. Now the lesson decides the
+// message: a good lesson gets two lines and no question, a hard one gets help
+// rather than a compliment, and the build of it changes from one to the next.
 
-  const context = 'Teacher: ' + r.teacher + '\nCourse: ' + r.course + '\nDate: ' + r.date + ' (' + r.day + ')\nStudents present: ' + present.length + (present.length ? ' (' + present.join(', ') + ')' : '') + (absent.length ? '\nAbsent: ' + absent.join(', ') : '') + (late.length ? '\nLate: ' + late.join(', ') : '') + '\n\nTeacher\'s lesson comment:\n"' + r.comment + '"' + historyBlock(r);
+// Which turn is this for this teacher? Used to rotate how the message is built
+// and how it opens, so two lessons running never get the same shape.
+function teacherTurn(r){
+  const mine = records.filter(x => x && x.teacher === r.teacher)
+                      .sort((a, b) => recStamp(a) - recStamp(b));
+  const i = mine.findIndex(x => String(x.id) === String(r.id));
+  return i < 0 ? 0 : i;
+}
 
-  const teachingKnowledge = 'Professional teaching reference (draw on this naturally in Part 3 ONLY when genuinely relevant to the specific comment — do not force any of it in, and never cite authors, book titles, or framework names like "TKT" or "CEFR" in the output; express everything in plain, practical language as your own coaching observation):\n\n' +
-    'CLASSROOM MANAGEMENT & ENGAGEMENT:\n' +
-    '- Strong Voice & Positive Framing: calm, economical, confident instructions; phrase corrections as what TO do rather than what not to do; useful for keeping high-energy or older students on task without raising anxiety.\n' +
-    '- Visual routines & predictable procedures: clear, repeated, visible steps for transitions and instructions; especially effective when verbal instructions risk getting lost across mixed-level or multilingual groups.\n' +
-    '- Restorative, relationship-first discipline: address behaviour through relationship-building and repair rather than punishment; particularly useful when a student\'s disengagement may stem from a cultural or social misunderstanding rather than defiance.\n' +
-    '- Engagement & group-work dynamics for mixed-level ESL groups: practical handling of pair/group work, monitoring without over-correcting, and differentiating instructions for different proficiency levels within the same class.\n' +
-    '- Motivation & learner vision: connecting tasks to a student\'s own sense of progress or future use of English tends to sustain motivation better than external pressure alone.\n\n' +
-    'EXAM PREPARATION & ASSESSMENT (Cambridge-style exams, IELTS, general principles):\n' +
-    '- Speaking test technique: turn-taking, extending answers beyond one-word responses, and using discourse markers are common weak points worth flagging early and practising in short bursts rather than only in mock exams.\n' +
-    '- Writing task structure: students often lose marks on task achievement (not answering what was asked) rather than language accuracy alone — checking a student understands the actual task before they write is high-value feedback.\n' +
-    '- Reading/listening exam technique: skimming for gist before detailed reading, and predicting answers before listening, are learnable strategies distinct from raw language level — worth separating "didn\'t understand the language" from "didn\'t use exam technique" when a student struggles.\n' +
-    '- Washback awareness: exam classes can drift into pure test practice; periodically connecting exam tasks back to real communicative use helps both motivation and genuine skill transfer.\n' +
-    '- Level-appropriate expectations: students plateauing just below a target level (e.g. B1 students stuck below B2) often need targeted work on linking/connector language and range of vocabulary rather than more grammar drilling.\n\n' +
-    'YOUNG LEARNERS & TEENS:\n' +
-    '- Short attention-span pacing: young learners (roughly ages 6-12) sustain focus better with frequent short activity changes, physical movement, or a "TPR" (total physical response) element than with one long seated task.\n' +
-    '- Concrete, visual instructions: for younger or lower-level groups, demonstrating a task or using gesture/visuals before explaining verbally reduces confusion and repeated instructions.\n' +
-    '- Teen-specific motivation: teenagers often respond better to autonomy and relevance (choice within a task, real-world connection) than to either over-praise or strict control; acknowledging their opinions genuinely tends to increase participation.\n' +
-    '- Primary-age routine: very young learners benefit from predictable lesson shape (same opening/closing routine each class) since it reduces anxiety and speeds transitions.\n\n' +
-    'If the teacher\'s comment surfaces a genuine opportunity in one of these areas (e.g. exam technique gaps, a disengaged or distracted student, mixed-level pacing, young learners losing focus, a teenager\'s motivation), Part 3 may weave in ONE relevant idea above, expressed as your own practical suggestion — never as a citation, framework name, or reading recommendation.';
+const FEEDBACK_SHAPES = [
+  'Start with the thing they did well, in one sentence. Then the one thing to change. Finish with what you will do about it yourself.',
+  'Start with the one thing to change, straight away. Put the good thing in the middle, briefly, as an aside. Finish on what you expect to see next time, said as a plain statement.',
+  'Start with what you are going to do in next week\'s plan because of this comment. Then the one thing for them to watch in the room. Leave the good thing till last, short, almost thrown away.'
+];
+const FEEDBACK_OPENINGS = [
+  'Open with their first name and a comma, then go straight to the main thing.',
+  'Open with a two or three word thanks that uses their first name, then the main thing.',
+  'Open without their name. Start on one concrete detail from their comment. Use the name later in the message, once, or not at all.',
+  'Open with your reaction in three or four plain words, the way you would say it passing them in the corridor, then their first name.',
+  'Open on the student or the moment that matters most in their comment, named straight away. Their own first name can come later, once, or not at all.'
+];
 
-  // Continuity instructions are only worth sending when there is real history
-  // to work from — otherwise they invite the AI to imagine a past that is not there.
-  const continuity = historyBlock(r)
-    ? '\n\nUSING THE HISTORY ABOVE:\n'
-      + '- You have written to this teacher before. Write as the same person continuing the same conversation, not as a stranger meeting them for the first time.\n'
-      + '- If a follow-up you asked for previously appears in this week\'s comment as something they actually did, say so plainly and warmly in PART 1 or PART 2 — name what they did. This matters more than any new observation.\n'
-      + '- Never repeat a follow-up they have already been given word for word. If the same issue is genuinely still there after you raised it, say so honestly and kindly, and go a step further: a different angle, a smaller concrete step, or an offer of help — not the same ask again.\n'
-      + '- If you can see real progress across the weeks, name it specifically.\n'
-      + '- Only refer to things that actually appear above. Never invent a previous conversation, a promise, or a result. If the history does not support a claim of continuity, simply write about this week.\n'
-    : '';
+// Phrases the old feedback leaned on. If a draft uses one, it is sent back once.
+const FEEDBACK_TELLS = [
+  'what i particularly like', 'great to hear', 'good to hear', 'lovely to hear', 'it sounds like',
+  'that kind of', 'this kind of', 'genuinely', 'real awareness', 'real difference', 'in the moment',
+  'on the fly', 'on-the-spot', 'lovely touch', 'i\'m glad', 'exactly the kind', 'exactly the right',
+  'follow-up for next lesson', 'worth making something of', 'takes real', 'landed well', 'landed so well',
+  'quietly', 'reflects the', 'shows good', 'shows a real', 'solid result', 'productive session'
+];
+function feedbackProblems(text){
+  const out = [];
+  const low = text.toLowerCase();
+  FEEDBACK_TELLS.forEach(t => { if (low.indexOf(t) !== -1) out.push('it uses the stock phrase "' + t + '"'); });
+  if (/[—]|\s–\s/.test(text)) out.push('it uses a dash as punctuation (use a full stop or a comma)');
+  if (text.indexOf('🔄') !== -1) out.push('it uses the 🔄 emoji');
+  const words = text.trim().split(/\s+/).length;
+  if (words > 120) out.push('it is ' + words + ' words long and the limit is 110');
+  if ((text.match(/\?/g) || []).length > 1) out.push('it asks more than one question');
+  return out;
+}
+// Last line of defence: whatever the model did, these never reach a teacher.
+function tidyFeedback(text){
+  return String(text || '')
+    .replace(/🔄\s*/g, '')
+    .replace(/\s+[—–]\s+/g, ', ')
+    .replace(/(\w)—(\w)/g, '$1, $2')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
-  const prompt = 'You are John, the director of English with John, a Cambridge exam-prep academy in Catalonia. You are reading one of your teachers\' lesson comments and writing brief, warm, professional feedback for them, in your own voice.\n\n'+ 'IMPORTANT — who does what at this academy: YOU write every lesson plan and prepare the materials yourself. Your teachers deliver the lessons you have planned. They do not plan lessons, design activities or make resources.\n\n' + context + '\n\n' + teachingKnowledge + continuity + '\n\nWrite feedback in EXACTLY this three-part format:\n\nPART 1 — Opening paragraph: Address the teacher by first name only (e.g. "Mireia,") followed by a comma. Acknowledge what they did or reported in their comment. Warm and positive tone. 2-3 sentences. Do NOT mention the course name, time slot, or day.\n\nPART 2 — "What I particularly like" paragraph: Start with exactly the words "What I particularly like is" and then highlight one specific thing from their comment that shows good practice, awareness, or initiative. 1-2 sentences.\n\nPART 3 — Follow-up line: Start with exactly "🔄 Follow-up for next lesson:" and give one concrete, specific thing for the teacher to do in their next class, directly related to their comment. It must be something that is THEIRS to do in the room — how they run an activity you have already planned, grouping and seating, monitoring, pacing, managing behaviour, checking in with a named student, what to watch for. NEVER ask them to plan a lesson, design an activity, prepare materials or find resources: that is your job, not theirs. If their comment points to something that needs a change in the plan or new material, say that YOU will handle it in next week\'s plan (for example "I\'ll build more review of this into next week\'s plan") and give them a classroom-level ask instead. Where genuinely relevant, this can draw on the professional teaching reference above, expressed in plain, practical language — never naming a book, author, or framework.\n\nRules:\n- No bullet points anywhere\n- No headers or labels\n- Just the three paragraphs, separated by a blank line\n- In English\n- Never mention book titles, author names, or framework names (e.g. TKT, CEFR) in the output\n- Never quote dates back at the teacher or say things like "three weeks ago" unless the history above actually shows it\n- Write only the feedback text, nothing else.';
-
+async function askClaude(promptText){
   // A call with no ceiling can hang forever, and the batch loop waits on it —
   // which is how a whole run freezes on "Generating 1/20" showing nothing.
-  // 60 seconds is far longer than a normal reply (2-5s) but it always ends.
   const response = await Promise.race([
     fetch(PROXY_URL, {
       method: 'POST',
@@ -499,7 +529,7 @@ async function callClaude(r) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 300,
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role: 'user', content: promptText }]
       })
     }),
     new Promise((_, rej) => setTimeout(
@@ -519,6 +549,254 @@ async function callClaude(r) {
   const data = await response.json();
   if (!data || !data.content || !data.content[0]) throw new Error('the proxy replied, but with no text in it');
   return data.content[0].text.trim();
+}
+
+async function callClaude(r) {
+  const absent = (r.students || []).filter(s => s.status === 'absent' && s.flag !== 'dropped').map(s => s.name);
+  const late = (r.students || []).filter(s => s.status === 'late').map(s => s.name);
+  const present = (r.students || []).filter(s => s.status === 'present').map(s => s.name);
+
+  const history = historyBlock(r);
+  const context = 'Teacher: ' + r.teacher + '\nCourse: ' + r.course + '\nDate: ' + r.date + ' (' + r.day + ')\nStudents present: ' + present.length + (present.length ? ' (' + present.join(', ') + ')' : '') + (absent.length ? '\nAbsent: ' + absent.join(', ') : '') + (late.length ? '\nLate: ' + late.join(', ') : '') + '\n\nTeacher\'s lesson comment:\n"' + r.comment + '"' + history;
+
+  const teachingKnowledge = 'Professional teaching reference (draw on this ONLY when genuinely relevant to the specific comment — do not force any of it in, and never cite authors, book titles, or framework names like "TKT" or "CEFR" in the output; express everything in plain, practical language as your own coaching observation):\n\n' +
+    'CLASSROOM MANAGEMENT & ENGAGEMENT:\n' +
+    '- Strong Voice & Positive Framing: calm, economical, confident instructions; phrase corrections as what TO do rather than what not to do; useful for keeping high-energy or older students on task without raising anxiety.\n' +
+    '- Visual routines & predictable procedures: clear, repeated, visible steps for transitions and instructions; especially effective when verbal instructions risk getting lost across mixed-level or multilingual groups.\n' +
+    '- Restorative, relationship-first discipline: address behaviour through relationship-building and repair rather than punishment; particularly useful when a student\'s disengagement may stem from a cultural or social misunderstanding rather than defiance.\n' +
+    '- Engagement & group-work dynamics for mixed-level ESL groups: practical handling of pair/group work, monitoring without over-correcting, and differentiating instructions for different proficiency levels within the same class.\n' +
+    '- Motivation & learner vision: connecting tasks to a student\'s own sense of progress or future use of English tends to sustain motivation better than external pressure alone.\n\n' +
+    'EXAM PREPARATION & ASSESSMENT (Cambridge-style exams, IELTS, general principles):\n' +
+    '- Speaking test technique: turn-taking, extending answers beyond one-word responses, and using discourse markers are common weak points worth flagging early and practising in short bursts rather than only in mock exams.\n' +
+    '- Writing task structure: students often lose marks on task achievement (not answering what was asked) rather than language accuracy alone — checking a student understands the actual task before they write is high-value feedback.\n' +
+    '- Reading/listening exam technique: skimming for gist before detailed reading, and predicting answers before listening, are learnable strategies distinct from raw language level — worth separating "didn\'t understand the language" from "didn\'t use exam technique" when a student struggles.\n' +
+    '- Washback awareness: exam classes can drift into pure test practice; periodically connecting exam tasks back to real communicative use helps both motivation and genuine skill transfer.\n' +
+    '- Level-appropriate expectations: students plateauing just below a target level (e.g. B1 students stuck below B2) often need targeted work on linking/connector language and range of vocabulary rather than more grammar drilling.\n\n' +
+    'YOUNG LEARNERS & TEENS:\n' +
+    '- Short attention-span pacing: young learners (roughly ages 6-12) sustain focus better with frequent short activity changes, physical movement, or a "TPR" (total physical response) element than with one long seated task.\n' +
+    '- Concrete, visual instructions: for younger or lower-level groups, demonstrating a task or using gesture/visuals before explaining verbally reduces confusion and repeated instructions.\n' +
+    '- Teen-specific motivation: teenagers often respond better to autonomy and relevance (choice within a task, real-world connection) than to either over-praise or strict control; acknowledging their opinions genuinely tends to increase participation.\n' +
+    '- Primary-age routine: very young learners benefit from predictable lesson shape (same opening/closing routine each class) since it reduces anxiety and speeds transitions.\n\n' +
+    'If the teacher\'s comment surfaces a genuine opportunity in one of these areas (e.g. exam technique gaps, a disengaged or distracted student, mixed-level pacing, young learners losing focus, a teenager\'s motivation), you may use ONE relevant idea above, said in a single plain sentence as your own suggestion — never as a citation, framework name, or reading recommendation.';
+
+  const turn = teacherTurn(r);
+  const shape = FEEDBACK_SHAPES[turn % FEEDBACK_SHAPES.length];
+  const opening = FEEDBACK_OPENINGS[turn % FEEDBACK_OPENINGS.length];
+
+  // Continuity is only worth sending when there is real history to work from —
+  // otherwise it invites the AI to imagine a past that is not there.
+  const continuity = history
+    ? '\n\nUSING THE HISTORY ABOVE\n'
+      + '- You have written to this teacher before. This is the same conversation carrying on.\n'
+      + '- Your earlier messages were written in a stiff house format that has been dropped. Use them for FACTS only: what you asked the teacher to try, what you promised to do. Do not copy how they open, how they are built, or any of their phrases.\n'
+      + '- If you asked them to try something last time and this comment shows they did it, say so first and plainly, naming what they did. That matters more than anything new.\n'
+      + '- If you asked them to try something and this comment does not say whether they did, or how it went, you may ask, in ONE short line, how it went. Only if you still need to know.\n'
+      + '- If one of your earlier messages already asked to talk about something "when we meet at the Language School", do NOT ask about it again. It is on your own list and you will raise it yourself.\n'
+      + '- If the same problem is still there after you raised it, say so kindly and go a step further: a smaller step, a different angle, or you stepping in yourself. Never the same ask again.\n'
+      + '- Only refer to things that actually appear above. Never invent a previous conversation, a promise or a result.\n'
+    : '';
+
+  const prompt = [
+    'You are John. You own and run English with John, a Cambridge exam academy in Catalonia, and you still teach there yourself. One of your teachers has left a comment on today\'s lesson and you are writing back. British English.',
+    '',
+    'WHO DOES WHAT: you write every lesson plan and prepare all the materials yourself. Your teachers deliver the lessons you planned. Never ask a teacher to plan a lesson, design an activity, prepare materials or find resources. If the comment shows the plan needs changing, that is your job and you say so ("I\'ll put more of that into next week\'s plan").',
+    '',
+    context,
+    '',
+    teachingKnowledge + continuity,
+    '',
+    'HOW YOU WRITE',
+    'You are a busy head teacher answering a colleague you respect, quickly, between classes. It reads like a message, not a report. Plain words. Contractions. Short sentences, and not all the same length. A sentence fragment is fine. You do not explain why good teaching is good, you do not summarise their comment back to them, and you do not praise the comment itself. You pick the ONE thing that matters most in what they wrote and leave the rest alone.',
+    '',
+    'STEP 1. READ HOW THE LESSON WENT, then write the matching kind of message. Do not label it.',
+    '- It went well: two to four sentences, 25 to 55 words. Say the specific good thing once, lightly. Do NOT invent something to fix, and do NOT ask a question just to have one.',
+    '- It was mixed (some of it worked, something did not): 60 to 100 words, built the way BUILD says below.',
+    '- It was a hard lesson (behaviour, a student refusing to work, the class not coping): 60 to 100 words. Start by acknowledging that it was hard, in your own words. No compliment for the sake of balance, they will see through it. Say what you think the real cause is. Give one small thing to try next time. Offer what YOU will do if it carries on: speak to the student, ring the parents, come into the class, change the plan.',
+    '',
+    'BUILD (for a mixed lesson): ' + shape,
+    'OPENING (every time): ' + opening,
+    '',
+    'STEP 2. DECIDE WHETHER TO ASK ANYTHING. Most messages ask NOTHING. A teacher who gets a question in every message stops answering them. Ask only when the answer would change what you do next. There are two ways to ask, and never more than one ask in a message:',
+    '- IN PERSON, for anything that needs a proper conversation: a student\'s behaviour or wellbeing, something for the parents, a student who may be in the wrong group or level, a teacher who is clearly struggling. Write it exactly in this form: "Could you tell me when we meet at the Language School about ...?" Always those words, "when we meet at the Language School". These go on your own list to raise face to face, so use it only when it deserves five minutes of talking.',
+    '- A LIGHT FOLLOW-UP, when you have suggested a small change in the room and want to know if it worked: one short line such as "Tell me how the new pairs go." No more than that.',
+    '- If nothing depends on an answer, ask nothing and simply stop.',
+    '',
+    'WHAT THEY CAN ACT ON: anything you ask them to try is something they do in the room. How they run an activity, seating and pairing, who they call on, pacing, what to watch for, a word with a named student. One idea only, said in a sentence, not a paragraph.',
+    '',
+    'NEVER',
+    '- Never write "What I particularly like", "It\'s good to hear", "It\'s great to hear", "It sounds like", "that kind of", "genuinely", "I\'m glad", "in the moment", "on the fly", "a lovely touch", "real awareness", "a real difference", "Follow-up for next lesson".',
+    '- No dashes as punctuation. Use a full stop or a comma.',
+    '- No emoji. No bullet points. No headings. No sign-off. At most one exclamation mark, usually none.',
+    '- Do not mention who was absent or late unless the teacher did.',
+    '- Do not mention the course name, the day or the time. Do not quote dates.',
+    '- Never name a book, an author or a framework.',
+    '- Use the teacher\'s first name once at most. Use students\' names exactly as the teacher wrote them.',
+    '- Never more than 110 words.',
+    '',
+    'LAYOUT: two or three short paragraphs with a blank line between them. A one-line paragraph is fine. When the question comes last it sits on its own line.',
+    '',
+    'These four are here ONLY to show how short and plain you sound. They are about other teachers and other classes. Do not reuse any sentence, opening or turn of phrase from them, except the fixed words "Could you tell me when we meet at the Language School about".',
+    '',
+    '"Marta, good. Getting through all of Part 3 with that group on a Friday is no small thing. Same again next week."',
+    '',
+    '"The thing I\'d change is the pairing. Nil and Arnau together means Nil does the work and Arnau watches. Split them next time.\n\nThe dictation idea was a good one, keep it.\n\nI\'ll put the reading at the start of next week\'s plan so it doesn\'t get squeezed again. Tell me how the new pairs go."',
+    '',
+    '"That was a long hour, Pau. I don\'t think the task was the problem. Six of them arriving ten minutes late was.\n\nNext time start with something short they can do on their own while the rest come in, and don\'t restart for latecomers.\n\nCould you tell me when we meet at the Language School about what you\'ve already tried with them? If it carries on I\'ll ring the parents myself."',
+    '',
+    '"Laia at the front is working, then. You don\'t mention her this week and I\'m taking that as a good sign.\n\nThe game at the end is doing its job too. Keep it."',
+    '',
+    'Write only the message to ' + r.teacher + ', nothing else.'
+  ].join('\n');
+
+  let text = await askClaude(prompt);
+  // One second go if the draft slipped back into the old habits. Only one: the
+  // tidy-up below catches what matters most, and each call costs money.
+  const problems = feedbackProblems(text);
+  if (problems.length) {
+    try {
+      const again = await askClaude(prompt
+        + '\n\nYOUR FIRST DRAFT WAS:\n"' + text + '"\n\nIt cannot be sent because ' + problems.join('; ')
+        + '. Write it again, shorter and plainer, fixing that. Write only the message.');
+      if (again && feedbackProblems(again).length <= problems.length) text = again;
+    } catch(e) { /* keep the first draft rather than fail the whole record */ }
+  }
+  return tidyFeedback(text);
+}
+
+// ── Questions to raise face to face ──────────────────────────────────────────
+// When a message asks a teacher to "tell me when we meet at the Language School
+// about …", that question is John's to follow up in person. It is kept in its
+// own small list in the database (one entry per lesson, written on its own,
+// never the whole list at once) so it can be ticked off after the conversation
+// and does not depend on anyone remembering what was asked three weeks ago.
+let questions = {};
+const IN_PERSON_RE = /[^.?!\n]*when we meet at the language school[^.?!\n]*[.?!]?/i;
+function inPersonQuestion(text){
+  const m = String(text || '').match(IN_PERSON_RE);
+  return m ? m[0].trim() : '';
+}
+function escQ(t){ return String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function todayStr(){
+  const n = new Date(), pad = x => String(x).padStart(2,'0');
+  return pad(n.getDate()) + '/' + pad(n.getMonth()+1) + '/' + n.getFullYear();
+}
+async function loadQuestions(){
+  try {
+    const res = await Promise.race([
+      fetch(FB_URL() + '/questions.json', {cache:'no-store'}),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('no reply')), 15000))
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    questions = (d && typeof d === 'object') ? d : {};
+  } catch(e) { console.warn('Could not read the in-person list:', e.message); }
+}
+// Called whenever feedback is saved. Adds, keeps or removes that lesson's
+// question to match what the saved message actually says. If this fails the
+// feedback itself is already saved; say so and carry on.
+async function trackQuestion(r, text){
+  const key = 'q' + r.id;
+  const q = inPersonQuestion(text);
+  const had = questions[key];
+  try {
+    if (q) {
+      const same = had && had.question === q;
+      const entry = { recordId: r.id, teacher: r.teacher, course: r.course || '', date: r.date || '',
+                      question: q, askedAt: same ? (had.askedAt || todayStr()) : todayStr(),
+                      status: same ? (had.status || 'open') : 'open' };
+      if (same && had.doneAt) entry.doneAt = had.doneAt;
+      const res = await fetch(FB_URL() + '/questions/' + key + '.json',
+        { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(entry) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      questions[key] = entry;
+    } else if (had && had.status !== 'done') {
+      // The message was rewritten without the question, so it comes off the list.
+      const patch = {}; patch[key] = null;
+      const res = await fetch(FB_URL() + '/questions.json',
+        { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patch) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      delete questions[key];
+    }
+  } catch(e) {
+    log('Feedback saved, but your in-person list could not be updated: ' + e.message);
+  }
+  renderAskList();
+}
+async function markAnswered(key){
+  const q = questions[key];
+  if (!q) return;
+  const btn = document.getElementById('ask-btn-' + key);
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const done = { status: 'done', doneAt: todayStr() };
+    const res = await fetch(FB_URL() + '/questions/' + key + '.json',
+      { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(done) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    questions[key] = Object.assign({}, q, done);
+  } catch(e) {
+    log('Could not tick that off: ' + e.message);
+  }
+  renderAskList();
+}
+// A question comes either from feedback on one lesson or from the Monday message
+// written on the Morning dashboard. Say which, in words.
+function askWhere(q){
+  if (q && q.source === 'weekly') return 'Monday message, ' + (q.date || '');
+  return (q.course || '') + ', lesson of ' + (q.date || '');
+}
+function openQuestions(){
+  return Object.keys(questions).map(k => Object.assign({ key: k }, questions[k]))
+    .filter(q => q && q.question && q.status !== 'done')
+    .sort((a, b) => String(a.teacher).localeCompare(String(b.teacher)) || ((Number(a.recordId) || 0) - (Number(b.recordId) || 0)));
+}
+function renderAskList(){
+  const sec = document.getElementById('askSection');
+  const list = document.getElementById('askList');
+  if (!sec || !list) return;
+  const open = openQuestions();
+  const doneCount = Object.keys(questions).filter(k => questions[k] && questions[k].status === 'done').length;
+  if (!open.length && !doneCount) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  document.getElementById('askTitle').textContent = 'To ask in person (' + open.length + ')';
+  document.getElementById('askCopyBtn').style.display = open.length ? '' : 'none';
+  if (!open.length) {
+    list.innerHTML = '<div style="font-size:13px;color:#64748b;">Nothing waiting. ' + doneCount + ' answered so far.</div>';
+    return;
+  }
+  let html = '', current = null;
+  open.forEach(q => {
+    if (q.teacher !== current) {
+      current = q.teacher;
+      html += '<div style="font-weight:700;font-size:14px;margin:10px 0 4px;">' + escQ(q.teacher) + '</div>';
+    }
+    html += '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #fef3c7;">'
+      + '<div style="flex:1;">'
+      +   '<div style="font-size:13.5px;color:#1e293b;line-height:1.5;">' + escQ(q.question) + '</div>'
+      +   '<div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">' + escQ(askWhere(q)) + ' · asked ' + escQ(q.askedAt || '') + '</div>'
+      + '</div>'
+      + '<button class="btn" id="ask-btn-' + escQ(q.key) + '" style="background:#16a34a;color:#fff;font-size:12px;padding:6px 12px;white-space:nowrap;" onclick="markAnswered(\'' + escQ(q.key) + '\')">✓ Answered</button>'
+      + '</div>';
+  });
+  if (doneCount) html += '<div style="font-size:11.5px;color:#94a3b8;margin-top:8px;">' + doneCount + ' answered so far.</div>';
+  list.innerHTML = html;
+}
+function askListText(){
+  let out = 'To ask in person\n', current = null;
+  openQuestions().forEach(q => {
+    if (q.teacher !== current) { current = q.teacher; out += '\n' + q.teacher + '\n'; }
+    out += '- ' + q.question + ' (' + askWhere(q) + ')\n';
+  });
+  return out;
+}
+async function copyAskList(){
+  const btn = document.getElementById('askCopyBtn');
+  const text = askListText();
+  try { await navigator.clipboard.writeText(text); }
+  catch(e) {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
+    ta.select(); try { document.execCommand('copy'); } catch(e2) {} ta.remove();
+  }
+  if (btn) { btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = 'Copy the list'; }, 1500); }
 }
 
 async function saveFeedback(id) {
@@ -561,6 +839,7 @@ async function saveFeedback(id) {
 
     feedback[id] = fbData;
     log('Saved feedback for ' + r.teacher + ' · ' + r.course + ' · ' + r.date);
+    await trackQuestion(r, text);
 
     const badge = document.getElementById('badge-' + id);
     badge.className = 'badge badge-done';
@@ -632,6 +911,7 @@ async function generateAll() {
         await fetch(FB_URL() + '/records/r' + r.id + '.json', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(record) });
 
         feedback[r.id] = fbData;
+        await trackQuestion(r, text);
         const badge = document.getElementById('badge-' + r.id);
         if (badge) { badge.className = 'badge badge-done'; badge.textContent = '✓ Done'; }
         success = true;

@@ -279,7 +279,7 @@ input[type=date]{border:1px solid #ddd;border-radius:7px;padding:5px 9px;font-si
   <div class="banner" id="coachBanner">
     <div>
       <div class="banner-title coach-banner-title">Team coaching prep — this week</div>
-      <div class="banner-sub">5–10 min conversation guide: recognition → development → next step</div>
+      <div class="banner-sub">One short message per teacher, to send on Monday</div>
     </div>
     <div class="pills">
       <div class="pill" id="coachTeacherCount">– teachers</div>
@@ -292,7 +292,7 @@ input[type=date]{border:1px solid #ddd;border-radius:7px;padding:5px 9px;font-si
     <p style="font-size:13px;color:#888">Loads with the coaching tab. Built from this week's lesson comments.</p>
   </div>
 
-  <div class="slbl">Individual coaching cards — click to expand</div>
+  <div class="slbl">Monday message for each teacher — click to expand</div>
   <div class="coach-grid" id="coachGrid"></div>
 
   <div class="slbl">Head teacher items — discuss as a team</div>
@@ -575,7 +575,7 @@ async function callAI(system,userMsg,retries,maxTokens){
 async function genLessonFeedback(r){
   const style=STYLES[Math.floor(Math.random()*STYLES.length)];
   const ai=await callAI(
-    `You are John's head teacher assistant at English with John academy in Catalonia. Write structured pedagogical feedback on a lesson comment. Respond ONLY with a JSON object (no markdown) with keys: "style" (the style name used), "analysis" (2-3 sentence pedagogical observation, warm and specific to the comment), "followup" (one concrete follow-up starting with "Could you…" or "Next lesson, please…"), "alert" (null OR {type:"high"|"positive",text:string}).`,
+    `You are John's head teacher assistant at English with John academy in Catalonia. Write a short note for John on a lesson comment, in plain British English: short sentences, no dashes as punctuation, no stock praise ("genuinely", "great to hear", "shows real", "in the moment"). John writes every lesson plan himself, so never suggest the teacher plans or prepares anything. Respond ONLY with a JSON object (no markdown) with keys: "style" (the style name used), "analysis" (1-2 sentences on the one thing that matters most in the comment, specific to it), "followup" (null in most cases. Only if John needs to hear something back from the teacher: when it needs a proper conversation, such as a student's behaviour or wellbeing, the parents, or a student in the wrong group, write it exactly as "Could you tell me when we meet at the Language School about ...?"; for a small change in the room, one short line such as "Tell me how the new pairs go."), "alert" (null OR {type:"high"|"positive",text:string}).`,
     `Teacher: ${r.teacher}\nClass: ${r.course||r.group||r.className||''}\nStyle: ${style}\nComment: "${r.comment}"`
   );
   return ai||{style,analysis:'Unable to generate.',followup:null,alert:null};
@@ -1115,38 +1115,210 @@ function buildReports(){
 let coachingData = [];
 let coachWeekRange = null;
 
+// ── The Monday message, in John's voice ─────────────────────────────────────
+// This used to be three labelled essays per teacher (Recognition, Development
+// focus, Next step), each two to four sentences whatever the week had been like.
+// Every teacher got the same letter with different nouns. Now it is one short
+// message, the week decides what kind, the build rotates from week to week, and
+// a question is only there when the answer matters.
+const WK_BUILDS=[
+  'Start with the one good thing, in a sentence. Then the one thing to change. Finish with what you will do about it yourself.',
+  'Start with the one thing to change, straight away. Put the good thing in the middle, briefly, as an aside. Finish on what you expect to see next week, said as a plain statement.',
+  'Start with what you are changing in next week\'s plans because of their comments. Then the one thing for them to watch in the room. Leave the good thing till last, short, almost thrown away.'
+];
+const WK_OPENINGS=[
+  'Open with their first name and a comma, then go straight to the main thing.',
+  'Open with a two or three word thanks that uses their first name, then the main thing.',
+  'Open without their name. Start on one concrete detail from their week. Use the name later, once, or not at all.',
+  'Open with your reaction to the week in three or four plain words, the way you would say it passing them in the corridor, then their first name.',
+  'Open on the student or the group that matters most this week, named straight away. Their own first name can come later, once, or not at all.'
+];
+// Phrases the old notes leaned on. A draft that uses one is sent back once.
+const WK_TELLS=[
+  'what i particularly like','great to hear','good to hear','lovely to hear','it sounds like','that kind of','this kind of',
+  'genuinely','real awareness','real difference','in the moment','on the fly','on the spot','on-the-spot','lovely touch','i\'m glad',
+  'exactly the kind','exactly the right','worth making something of','takes real','landed well','quietly','reflects the',
+  'shows good','shows a real','shows real','shows strong','solid result','productive session','student-centred','stands out',
+  'impressive','your comments','your lesson comments','a teacher who','instincts','thoughtful','attentive','relational',
+  'proactively','well-developed','responsive teaching','strong rapport'
+];
+function wkProblems(text){
+  const out=[]; const low=String(text||'').toLowerCase();
+  WK_TELLS.forEach(t=>{ if(low.indexOf(t)!==-1) out.push('it uses the stock phrase "'+t+'"'); });
+  if(/[—]|\s–\s/.test(text)) out.push('it uses a dash as punctuation (use a full stop or a comma)');
+  if(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text)) out.push('it uses an emoji');
+  const words=String(text||'').trim().split(/\s+/).length;
+  if(words>145) out.push('it is '+words+' words long and the limit is 130');
+  if((String(text||'').match(/\?/g)||[]).length>1) out.push('it asks more than one question');
+  return out;
+}
+// Last line of defence: whatever the model did, these never reach a teacher.
+function wkTidy(text){
+  return String(text||'')
+    .replace(/\s+[—–]\s+/g,', ')
+    .replace(/(\w)—(\w)/g,'$1, $2')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
+}
+// So two weeks running, and two teachers in the same week, get different builds.
+function weekTurn(mon,teacher){
+  const wk=Math.round(mon.getTime()/(7*86400000));
+  return wk+Math.max(0,TEACHERS.indexOf(teacher));
+}
+
+// ── Questions to raise face to face ─────────────────────────────────────────
+// Shared with the feedback generator: one small entry per question under
+// /questions, written on its own (never the whole list), ticked off there.
+const IN_PERSON_RE=/[^.?!\n]*when we meet at the language school[^.?!\n]*[.?!]?/i;
+function inPersonQuestion(text){ const m=String(text||'').match(IN_PERSON_RE); return m?m[0].trim():''; }
+let askList={};
+async function loadAskList(){
+  try{ const d=await fetchFB('questions'); askList=(d&&typeof d==='object')?d:{}; }
+  catch(e){ console.warn('Could not read the in-person list:',e.message); }
+}
+function openAsksFor(teacher){
+  return Object.keys(askList).map(k=>askList[k])
+    .filter(q=>q&&q.teacher===teacher&&q.question&&q.status!=='done').map(q=>q.question);
+}
+function weeklyAskKey(t){ return 'qw_'+t.key+'_'+dateKey(coachWeekRange.mon); }
+// Called when the message is copied, which is the moment it is on its way to the
+// teacher. Adds, keeps or removes that week's question to match the message.
+// Returns '' when all is well, or a short reason if the list could not be updated.
+async function trackWeeklyAsk(t){
+  if(!coachWeekRange) return '';
+  const key=weeklyAskKey(t), q=inPersonQuestion(t.message);
+  try{
+    const r0=await fetch(FB+'/questions/'+key+'.json',{cache:'no-store'});
+    if(!r0.ok) throw new Error('HTTP '+r0.status);
+    const had=await r0.json();
+    if(q){
+      if(had&&had.question===q) return '';            // already there, open or answered: leave it
+      const n=new Date(), pad=x=>String(x).padStart(2,'0');
+      const entry={teacher:t.name,course:'',date:'week of '+fmtShort(coachWeekRange.mon),source:'weekly',
+                   question:q,askedAt:pad(n.getDate())+'/'+pad(n.getMonth()+1)+'/'+n.getFullYear(),status:'open'};
+      const res=await fetch(FB+'/questions/'+key+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(entry)});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      askList[key]=entry;
+    }else if(had&&had.status!=='done'){
+      const patch={}; patch[key]=null;
+      const res=await fetch(FB+'/questions.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      delete askList[key];
+    }
+    return '';
+  }catch(e){ return e.message||'no reply'; }
+}
+
+const WK_SYSTEM=[
+  'You are John. You own and run English with John, a Cambridge exam academy in Catalonia, and you still teach there yourself. It is Monday and you are writing a short message to one of your teachers about their week, working from the comments they left on their lessons. You will send it to them yourself on WhatsApp. British English.',
+  '',
+  'WHO DOES WHAT: you write every lesson plan and prepare all the materials yourself. Your teachers deliver the lessons you planned. Never ask a teacher to plan a lesson, design an activity, prepare materials or find resources. If the comments show a plan needs changing, that is your job and you say so ("I\'ll put more of that into next week\'s plans").',
+  '',
+  'ONLY WHAT IS THERE: everything you say comes from the comments you are given. Never invent a student, a group, an incident or a detail. If there is little to go on, write less.',
+  '',
+  'HOW YOU WRITE',
+  'You are a busy head teacher writing to a colleague you respect. It is a message, not a report and not an appraisal. Plain words. Contractions. Short sentences, and not all the same length. A sentence fragment is fine. You do not describe the teacher to themselves ("you are a teacher who", "your comments show"), you do not explain why good teaching is good, and you do not list everything they did. From the whole week you pick ONE good thing worth saying and, only if there really is one, ONE thing to change. Name the real student, group or moment. Leave the rest alone.',
+  '',
+  'STEP 1. READ HOW THE WEEK WENT, then write the matching kind of message. Do not label it.',
+  '- A good week: 30 to 60 words. The one specific good thing, said once and lightly. Do NOT invent something to fix, and do NOT ask a question just to have one.',
+  '- A mixed week (most of it worked, something did not): 70 to 120 words, built the way BUILD says below.',
+  '- A hard week (behaviour, a group not coping, a teacher clearly worn down by it): 70 to 120 words. Start by acknowledging that it was hard, in your own words. No compliment for the sake of balance, they will see through it. Say what you think the real cause is. Give one small thing to try. Say what YOU will do: speak to the student, ring the parents, come into the class, change the plan.',
+  '',
+  'BUILD (for a mixed week): {BUILD}',
+  'OPENING (every time): {OPENING}',
+  '',
+  'STEP 2. DECIDE WHETHER TO ASK ANYTHING. Most weeks you ask NOTHING. A teacher who gets a question in every message stops answering them. Ask only when the answer would change what you do next. There are two ways to ask, and never more than one ask in a message:',
+  '- IN PERSON, for anything that needs a proper conversation: a student\'s behaviour or wellbeing, something for the parents, a student who may be in the wrong group or level, a teacher who is clearly struggling. Write it exactly in this form: "Could you tell me when we meet at the Language School about ...?" Always those words, "when we meet at the Language School". These go on your own list to raise face to face, so use it only when it deserves five minutes of talking.',
+  '- A LIGHT FOLLOW-UP, when you have suggested a small change in the room and want to know if it worked: one short line such as "Tell me how the new pairs go." No more than that.',
+  '- If nothing depends on an answer, ask nothing and simply stop.',
+  '- If you are told something is ALREADY ON YOUR LIST to raise with them in person, do NOT ask about it again.',
+  '',
+  'WHAT THEY CAN ACT ON: anything you ask them to try is something they do in the room. How they run an activity, seating and pairing, who they call on, pacing, what to watch for, a word with a named student. One idea only, said in a sentence.',
+  '',
+  'NEVER',
+  '- Never write "What I particularly like", "It\'s good to hear", "It\'s great to hear", "It sounds like", "that kind of", "genuinely", "I\'m glad", "in the moment", "on the spot", "stands out", "impressive", "student-centred", "instincts", "thoughtful", "attentive", "rapport", "shows real", "your comments this week".',
+  '- No dashes as punctuation. Use a full stop or a comma.',
+  '- No emoji. No bullet points. No headings. No sign-off. At most one exclamation mark, usually none.',
+  '- Do not quote attendance percentages, the number of classes, or dates. Do not list who was absent.',
+  '- If you are told lessons are still without a comment, you may say so once, in one plain line. Otherwise do not mention comments at all.',
+  '- Never name a book, an author or a framework.',
+  '- Use the teacher\'s first name once at most. Use students\' and groups\' names exactly as the teacher wrote them.',
+  '- Never more than 130 words.',
+  '',
+  'LAYOUT: two or three short paragraphs with a blank line between them. A one-line paragraph is fine. When a question comes last it sits on its own line.',
+  '',
+  'These three are here ONLY to show how short and plain you sound. They are about other teachers and other groups. Do not reuse any sentence, opening or turn of phrase from them, except the fixed words "Could you tell me when we meet at the Language School about".',
+  '',
+  '"Thanks Núria. The story writing with the little ones is the bit I\'d keep from this week. They used the new words without being told to. Same again."',
+  '',
+  '"The Thursday group is the one to sort out, Oriol. Three weeks now of the same two finishing early and switching off.\n\nGive those two the harder version of the task from the start, don\'t wait for them to finish. I\'ll put one into every plan for that group from now on.\n\nThe pair work with the B1s is going well, by the way. Leave that alone."',
+  '',
+  '"Rough week, Gemma, and it reads like it.\n\nI don\'t think it\'s you. That group has lost two and gained three since September and they come in unsettled. Start them on something silent and written for the first five minutes, every lesson, no exceptions.\n\nCould you tell me when we meet at the Language School about Biel? I\'d rather hear it from you before I ring home."',
+  '',
+  'Respond ONLY with a JSON object, no markdown and no preamble, with keys: "message" (the text you will send, with \\n\\n between paragraphs), "highlights" (array of 0-3 short strings) and "watchlist" (array of 0-3 short strings). The two arrays are private notes for yourself and are NOT sent: real moments worth remembering, and real students or situations to keep an eye on, taken only from the comments.'
+].join('\n');
+
 async function genCoachingReport(teacher, weekRecs){
   const tr = weekRecs.filter(r => r.teacher === teacher);
   const rate = attendanceRate(tr);
-  const withComments = tr.filter(r => r.comment && r.comment.trim());
-  const noComment = tr.filter(r => !r.comment || !r.comment.trim());
-  const abs = absents(tr);
+  const withComments = tr.filter(r => hasRealComment(r));
+  const noComment = tr.filter(r => !hasRealComment(r));
 
   if (!tr.length) return null;
+
+  const base = {
+    key: teacher.toLowerCase().replace(/[^a-z]/g,''),
+    name: teacher,
+    rate: rate,
+    rateCol: rate===null?'#888':rate>=85?'#3B6D11':rate>=70?'#854F0B':'#A32D2D',
+    classes: tr.length
+  };
+
+  // Nothing written by the teacher means nothing true to say. No AI call, no padding.
+  if (!withComments.length) {
+    return Object.assign(base, { message:'', ask:'', highlights:[], watchlist:[],
+      note:'No lesson comments from '+teacher+' this week, so there is nothing to write a message from.' });
+  }
 
   const commentsBlock = withComments.map(r =>
     `${r.course||r.group||r.className||''} (${r.date}): "${r.comment}"`
   ).join('\n');
 
-  const system = 'You are John, the founder and head teacher of English with John, an official Cambridge English exam centre in Catalonia, Spain. You are preparing private coaching notes about one of your teachers, based on their real lesson comments from this week, to use in a short 1:1 conversation with them. Your tone is warm, specific, and developmental — you genuinely value this teacher and want to help them grow, never punitive or generic. Ground every observation in the actual lesson comments given; never invent incidents, student names, or details not present in the source material. If there is too little material to say something specific and genuine, say less rather than padding with generic praise. Respond ONLY with a JSON object (no markdown, no preamble) with keys: "recognition" (2-4 sentences acknowledging genuine strengths shown this week, specific to their actual comments), "development" (2-4 sentences identifying ONE real growth area visible in their comments, framed constructively), "nextstep" (1-3 concrete, specific suggestions for their next lessons, directly tied to the development area), "highlights" (array of 0-3 short strings, specific positive moments from their actual comments), "watchlist" (array of 0-3 short strings, specific students or situations from their actual comments that need follow-up, e.g. absences, struggling students, or unresolved issues — only include real items present in the data, never invent).';
+  const turn = weekTurn(coachWeekRange ? coachWeekRange.mon : new Date(), teacher);
+  const system = WK_SYSTEM.replace('{BUILD}', WK_BUILDS[turn % WK_BUILDS.length])
+                          .replace('{OPENING}', WK_OPENINGS[turn % WK_OPENINGS.length]);
 
-  const userMsg = `Teacher: ${teacher}\nWeek attendance rate: ${rate===null?'no data':rate+'%'}\nClasses this week: ${tr.length}\nClasses with a lesson comment: ${withComments.length}\nClasses missing a comment: ${noComment.length}\n${abs.length?'Absences this week: '+abs.map(a=>a.name+' ('+a.cls+')').join(', ')+'\n':''}\nLesson comments this week:\n${commentsBlock || '(no lesson comments submitted this week)'}`;
+  const already = openAsksFor(teacher);
+  const userMsg = `Teacher: ${teacher}\nLessons this week: ${tr.length}\n`
+    + (noComment.length ? `Lessons still without a comment: ${noComment.length}\n` : '')
+    + (already.length ? `ALREADY ON YOUR LIST to raise with ${teacher} in person (do not ask about these again):\n${already.map(q=>'- '+q).join('\n')}\n` : '')
+    + `\nTheir lesson comments this week:\n${commentsBlock}`;
 
-  const ai = await callAI(system, userMsg);
-  if (!ai) return null;
+  // callAI remembers answers by the first few words of the request, which for
+  // this one is just the teacher's name. Without clearing it, Regenerate and a
+  // change of week would both hand back the earlier message.
+  const forget = m => { try { delete aiCache[btoa(encodeURIComponent(m)).slice(0,48)]; } catch(e) {} };
+  forget(userMsg);
+  let ai = await callAI(system, userMsg);
+  if (!ai || !ai.message) return null;
 
-  return {
-    key: teacher.toLowerCase().replace(/[^a-z]/g,''),
-    name: teacher,
-    rate: rate,
-    rateCol: rate===null?'#888':rate>=85?'#3B6D11':rate>=70?'#854F0B':'#A32D2D',
-    classes: tr.length,
-    recognition: ai.recognition || 'No lesson comments available to generate recognition notes this week.',
-    development: ai.development || '',
-    nextstep: ai.nextstep || '',
+  // One second go if the draft slipped back into the old habits. Only one.
+  const problems = wkProblems(ai.message);
+  if (problems.length) {
+    const againMsg = 'REWRITE for ' + teacher + '. Your first draft of the message was:\n"' + ai.message + '"\n\nIt cannot be sent because '
+      + problems.join('; ') + '. Write it again, shorter and plainer, fixing that. Same JSON keys.\n\n' + userMsg;
+    forget(againMsg);
+    const again = await callAI(system, againMsg);
+    if (again && again.message && wkProblems(again.message).length <= problems.length) ai = again;
+  }
+
+  const message = wkTidy(ai.message);
+  return Object.assign(base, {
+    message: message,
+    ask: inPersonQuestion(message),
     highlights: Array.isArray(ai.highlights) ? ai.highlights : [],
     watchlist: Array.isArray(ai.watchlist) ? ai.watchlist : []
-  };
+  });
 }
 
 async function genHeadTeacherItems(weekRecs){
@@ -1183,6 +1355,7 @@ async function genWeeklyAgenda(weekRecs){
     +'Base every line strictly on the lesson comments given. Never invent a student, teacher, class or incident that is not in them. '
     +'Name real people and classes so each point is concrete and can be said out loud as written. '
     +'Be brief: this is a spoken agenda, not a report. Leave an array empty rather than padding it. '
+    +'Write the way John talks: plain British English, short sentences, no dashes as punctuation, and none of "genuinely", "exactly the kind of", "great to see", "real awareness", "in the moment". '
     +'Respond ONLY with JSON (no markdown) with keys: '
     +'"wins" (array of 0-3 {who, what} — name a teacher and the specific thing worth recognising in front of the others), '
     +'"focus" (object {title, why, how} OR null — the single teaching point most worth the team working on next week, drawn from a pattern across several comments; "how" is one practical instruction), '
@@ -1304,7 +1477,7 @@ function renderHeadTeacherItems(items){
 // Asked for explicitly, because it is slow: one call per teacher, spaced for the rate limit.
 function loadCoachingDetail(){
   const grid=document.getElementById('coachGrid');
-  if(grid)grid.innerHTML='<p style="font-size:13px;color:#888;padding:1rem"><i class="ti ti-loader"></i> Writing the individual notes\u2026 this takes a minute or two, you can leave the tab open.</p>';
+  if(grid)grid.innerHTML='<p style="font-size:13px;color:#888;padding:1rem"><i class="ti ti-loader"></i> Writing the Monday messages\u2026 this takes a minute or two, you can leave the tab open.</p>';
   buildCoachGrid(false, true);
 }
 function loadTeamItems(){
@@ -1367,14 +1540,14 @@ async function buildCoachGrid(forceRegenerate, deepMode) {
   // rate limit. That is over a minute for a full team, so it is not run on open —
   // the agenda is what a ten-minute meeting needs. Ask for the rest explicitly.
   if (!deepMode) {
-    const nT = TEACHERS.filter(t => weekRecs.some(r => r.teacher === t)).length;
+    const nT = TEACHERS.filter(t => t !== 'John' && weekRecs.some(r => r.teacher === t)).length;
     if (aiCache[cacheKey]) {
       coachingData = aiCache[cacheKey];
     } else {
       grid.innerHTML = '<div style="padding:1rem;font-size:13px;color:#555;line-height:1.6">'
-        + (nT ? 'A note per teacher takes about ' + Math.max(1,Math.round(nT*13/60)) + ' minute'+(nT*13>=90?'s':'')+' to write ('+nT+' teacher'+(nT!==1?'s':'')+' this week), so it is not done automatically.'
+        + (nT ? 'A message per teacher takes about ' + Math.max(1,Math.round(nT*13/60)) + ' minute'+(nT*13>=90?'s':'')+' to write ('+nT+' teacher'+(nT!==1?'s':'')+' this week), so it is not done automatically.'
               : 'No teachers have classes with comments this week.')
-        + (nT ? '<br><button class="icon-btn" style="margin-top:.6rem" onclick="loadCoachingDetail()"><i class="ti ti-users"></i> Write the individual notes</button>' : '')
+        + (nT ? '<br><button class="icon-btn" style="margin-top:.6rem" onclick="loadCoachingDetail()"><i class="ti ti-users"></i> Write the Monday messages</button>' : '')
         + '</div>';
       if (htiCard) htiCard.innerHTML = '<div style="font-size:13px;color:#555">'
         + '<button class="icon-btn" onclick="loadTeamItems()"><i class="ti ti-list-check"></i> Generate team discussion items</button></div>';
@@ -1385,13 +1558,15 @@ async function buildCoachGrid(forceRegenerate, deepMode) {
   if (!forceRegenerate && aiCache[cacheKey]) {
     coachingData = aiCache[cacheKey];
   } else {
-    const teachersWithClasses = TEACHERS.filter(t => weekRecs.some(r => r.teacher === t));
+    // You do not write to yourself, so there is no message for John.
+    const teachersWithClasses = TEACHERS.filter(t => t !== 'John' && weekRecs.some(r => r.teacher === t));
     coachingData = [];
+    await loadAskList();   // what you have already asked each of them to tell you in person
     for (let i = 0; i < teachersWithClasses.length; i++) {
       // Space the calls out — the proxy rate-limits, and the agenda just used a slot.
       await new Promise(r => setTimeout(r, 13000));
       const t = teachersWithClasses[i];
-      grid.innerHTML = `<p style="font-size:13px;color:#888;padding:1rem"><i class="ti ti-loader"></i> Generating coaching notes… (${i+1}/${teachersWithClasses.length}: ${t})</p>`;
+      grid.innerHTML = `<p style="font-size:13px;color:#888;padding:1rem"><i class="ti ti-loader"></i> Writing the Monday messages… (${i+1}/${teachersWithClasses.length}: ${t})</p>`;
       const report = await genCoachingReport(t, weekRecs);
       if (report) coachingData.push(report);
       else anyAIFailure = true;
@@ -1438,27 +1613,23 @@ async function buildCoachGrid(forceRegenerate, deepMode) {
         </div>
       </div>
       <div class="coach-body" id="cb_${t.key}">
-        <div class="coach-section">
-          <div class="coach-section-lbl recognition"><i class="ti ti-heart" style="font-size:13px"></i> Recognition</div>
-          <div class="coach-text">${t.recognition}</div>
-        </div>
-        ${t.development ? `<div class="coach-section">
-          <div class="coach-section-lbl development"><i class="ti ti-target" style="font-size:13px"></i> Development focus</div>
-          <div class="coach-text">${t.development}</div>
+        ${t.message ? `<div class="coach-section">
+          <div class="coach-section-lbl recognition"><i class="ti ti-message" style="font-size:13px"></i> Message for ${escA(t.name)}</div>
+          <div class="coach-text" style="white-space:pre-wrap">${escA(t.message)}</div>
+        </div>` : `<div class="coach-section"><div class="coach-text" style="color:#888">${escA(t.note || 'No message was written.')}</div></div>`}
+        ${t.ask ? `<div class="coach-section">
+          <div class="coach-section-lbl" style="color:#92400e"><i class="ti ti-messages" style="font-size:13px"></i> To ask in person</div>
+          <div class="coach-text">${escA(t.ask)}<div style="font-size:11px;color:#aaa;margin-top:3px">Goes on your in-person list when you copy the message.</div></div>
         </div>` : ''}
-        ${t.nextstep ? `<div class="coach-section">
-          <div class="coach-section-lbl nextstep"><i class="ti ti-arrow-right" style="font-size:13px"></i> Next step</div>
-          <div class="coach-text">${t.nextstep}</div>
+        ${(t.highlights||[]).length ? `<div class="coach-section">
+          <div class="coach-section-lbl" style="color:#534AB7"><i class="ti ti-sparkles" style="font-size:13px"></i> Your notes: highlights (not sent)</div>
+          <div class="coach-text"><ul>${t.highlights.map(h=>`<li>${escA(h)}</li>`).join('')}</ul></div>
         </div>` : ''}
-        ${t.highlights.length ? `<div class="coach-section">
-          <div class="coach-section-lbl" style="color:#534AB7"><i class="ti ti-sparkles" style="font-size:13px"></i> This week's highlights</div>
-          <div class="coach-text"><ul>${t.highlights.map(h=>`<li>${h}</li>`).join('')}</ul></div>
+        ${(t.watchlist||[]).length ? `<div class="coach-section">
+          <div class="coach-section-lbl" style="color:#854F0B"><i class="ti ti-eye" style="font-size:13px"></i> Your notes: watch / follow up (not sent)</div>
+          <div class="coach-text"><ul>${t.watchlist.map(w=>`<li>${escA(w)}</li>`).join('')}</ul></div>
         </div>` : ''}
-        ${t.watchlist.length ? `<div class="coach-section">
-          <div class="coach-section-lbl" style="color:#854F0B"><i class="ti ti-eye" style="font-size:13px"></i> Watch / follow up</div>
-          <div class="coach-text"><ul>${t.watchlist.map(w=>`<li>${w}</li>`).join('')}</ul></div>
-        </div>` : ''}
-        <button class="coach-copy-btn" onclick="event.stopPropagation();copyCoach('${t.key}')"><i class="ti ti-copy"></i> Copy conversation notes for ${t.name}</button>
+        ${t.message ? `<button class="coach-copy-btn" onclick="event.stopPropagation();copyCoach('${t.key}')"><i class="ti ti-copy"></i> Copy the message for ${escA(t.name)}</button>` : ''}
       </div>
     </div>
   `).join('');
@@ -1474,13 +1645,22 @@ function toggleCoach(key) {
   card.classList.toggle('open', !isOpen);
 }
 
-function copyCoach(key) {
+async function copyCoach(key) {
   const t = coachingData.find(x=>x.key===key);
-  if (!t) return;
-  const wlabel = coachWeekRange ? `${fmtShort(coachWeekRange.mon)}–${fmtShort(coachWeekRange.sun)}` : '';
-  const text = `EWJ Coaching notes — ${t.name} · Week of ${wlabel}\n\n💙 RECOGNITION\n${t.recognition}\n\n${t.development?'🎯 DEVELOPMENT FOCUS\n'+t.development+'\n\n':''}${t.nextstep?'🚀 NEXT STEP\n'+t.nextstep+'\n\n':''}${t.watchlist.length?'👁 WATCH / FOLLOW UP\n'+t.watchlist.map(w=>'• '+w).join('\n'):''}`;
-  navigator.clipboard.writeText(text).catch(()=>{});
-  alert(`${t.name}'s coaching notes copied — ready to paste into WhatsApp or your notes.`);
+  if (!t || !t.message) { alert('There is no message to copy for this teacher.'); return; }
+  // Only the message goes to the teacher. Your own notes stay on this page.
+  let copied = true;
+  try { await navigator.clipboard.writeText(t.message); }
+  catch(e) {
+    try { const ta=document.createElement('textarea'); ta.value=t.message; document.body.appendChild(ta); ta.select(); copied=document.execCommand('copy'); ta.remove(); }
+    catch(e2) { copied=false; }
+  }
+  if (!copied) { alert('Could not copy automatically. Select the message and copy it by hand.'); return; }
+  const failed = await trackWeeklyAsk(t);
+  let msg = `${t.name}'s message copied, ready to paste into WhatsApp.`;
+  if (t.ask && !failed) msg += `\n\nAdded to your in-person list:\n${t.ask}`;
+  if (failed) msg += `\n\nBut your in-person list could not be updated (${failed}). The message itself is copied.`;
+  alert(msg);
 }
 
 function copyNotes() {
