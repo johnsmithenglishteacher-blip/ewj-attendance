@@ -695,6 +695,8 @@ async function loadQuestions(){
 // question to match what the saved message actually says. If this fails the
 // feedback itself is already saved; say so and carry on.
 async function trackQuestion(r, text){
+  // You do not ask yourself anything, so nothing from your own lessons goes on the list.
+  if (r && r.teacher === 'John') { renderAskList(); return; }
   const key = 'q' + r.id;
   const q = inPersonQuestion(text);
   const had = questions[key];
@@ -746,7 +748,7 @@ function askWhere(q){
 }
 function openQuestions(){
   return Object.keys(questions).map(k => Object.assign({ key: k }, questions[k]))
-    .filter(q => q && q.question && q.status !== 'done')
+    .filter(q => q && q.question && q.status !== 'done' && q.teacher !== 'John')
     .sort((a, b) => String(a.teacher).localeCompare(String(b.teacher)) || ((Number(a.recordId) || 0) - (Number(b.recordId) || 0)));
 }
 function renderAskList(){
@@ -754,7 +756,7 @@ function renderAskList(){
   const list = document.getElementById('askList');
   if (!sec || !list) return;
   const open = openQuestions();
-  const doneCount = Object.keys(questions).filter(k => questions[k] && questions[k].status === 'done').length;
+  const doneCount = Object.keys(questions).filter(k => questions[k] && questions[k].status === 'done' && questions[k].teacher !== 'John').length;
   if (!open.length && !doneCount) { sec.style.display = 'none'; return; }
   sec.style.display = '';
   document.getElementById('askTitle').textContent = 'To ask in person (' + open.length + ')';
