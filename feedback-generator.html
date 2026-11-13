@@ -76,10 +76,10 @@
 
   <div id="askSection" style="display:none;background:#fff;border:1.5px solid #fde68a;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
-      <span id="askTitle" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#92400e;flex:1;">To ask in person</span>
+      <span id="askTitle" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#92400e;flex:1;">Questions to follow up</span>
       <button class="btn" style="background:#fff;color:#92400e;border:1.5px solid #fde68a;font-size:12px;padding:5px 12px;" onclick="copyAskList()" id="askCopyBtn">Copy the list</button>
     </div>
-    <div style="font-size:12px;color:#64748b;margin-bottom:10px;">Things you asked a teacher to tell you about when you meet. Tick each one off once you have had the conversation.</div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:10px;">Every question in a message you sent since 12 Nov, whether the AI wrote it or you added it, here or in the register. Tick each one off once you have your answer.</div>
     <div id="askList"></div>
   </div>
 
@@ -618,7 +618,7 @@ async function callClaude(r) {
     '',
     'STEP 2. DECIDE WHETHER TO ASK ANYTHING. Most messages ask NOTHING. A teacher who gets a question in every message stops answering them. Ask only when the answer would change what you do next. There are two ways to ask, and never more than one ask in a message:',
     '- IN PERSON, for anything that needs a proper conversation: a student\'s behaviour or wellbeing, something for the parents, a student who may be in the wrong group or level, a teacher who is clearly struggling. Write it exactly in this form: "Could you tell me when we meet at the Language School about ...?" Always those words, "when we meet at the Language School". These go on your own list to raise face to face, so use it only when it deserves five minutes of talking.',
-    '- A LIGHT FOLLOW-UP, when you have suggested a small change in the room and want to know if it worked: one short line such as "Tell me how the new pairs go." No more than that.',
+    '- A LIGHT FOLLOW-UP, when you have suggested a small change in the room and want to know if it worked: one short line such as "Tell me how the new pairs go." Write it as a statement, with no question mark: every question mark in the message goes on your own list to chase.',
     '- If nothing depends on an answer, ask nothing and simply stop.',
     '',
     'WHAT THEY CAN ACT ON: anything you ask them to try is something they do in the room. How they run an activity, seating and pairing, who they call on, pacing, what to watch for, a word with a named student. One idea only, said in a sentence, not a paragraph.',
@@ -663,17 +663,36 @@ async function callClaude(r) {
   return tidyFeedback(text);
 }
 
-// ── Questions to raise face to face ──────────────────────────────────────────
-// When a message asks a teacher to "tell me when we meet at the Language School
-// about …", that question is John's to follow up in person. It is kept in its
-// own small list in the database (one entry per lesson, written on its own,
-// never the whole list at once) so it can be ticked off after the conversation
-// and does not depend on anyone remembering what was asked three weeks ago.
-let questions = {};
+// ── Questions to follow up ───────────────────────────────────────────────────
+// Every question in a message you sent is yours to follow up, whoever wrote it:
+// the AI's "Could you tell me when we meet at the Language School about …", or
+// one you typed yourself while editing, here or in the register. The list is
+// worked out from the feedback itself each time, so it cannot miss a question
+// because of where or how the message was edited. Only messages sent from
+// 12 Nov 2026 count: the older style ended every message with a question.
+// /questions in the database keeps a copy of each open question (so it is not
+// lost once a lesson drops out of the weeks loaded here) and your ticks.
+let questions = {};     // what is stored: open copies, ticks, Monday-message questions
+let asks = {};          // what is open right now, key -> entry
+const QUESTIONS_FROM = new Date(2026, 10, 12, 0, 0, 0).getTime();
 const IN_PERSON_RE = /[^.?!\n]*when we meet at the language school[^.?!\n]*[.?!]?/i;
 function inPersonQuestion(text){
   const m = String(text || '').match(IN_PERSON_RE);
   return m ? m[0].trim() : '';
+}
+function questionsIn(text){
+  const out = [];
+  String(text || '').split(/\n+/).forEach(line => {
+    (line.match(/[^.?!]*\?/g) || []).forEach(q => {
+      q = q.replace(/^[\s"'“‘(\-–—•]+/, '').trim();
+      if (q.length > 3) out.push(q);
+    });
+  });
+  return out;
+}
+function fbStamp(s){
+  const m = String(s || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return m ? new Date(+m[3], +m[2] - 1, +m[1], 12, 0, 0).getTime() : 0;
 }
 function escQ(t){ return String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function todayStr(){
@@ -690,54 +709,96 @@ async function loadQuestions(){
     const d = await res.json();
     questions = (d && typeof d === 'object') ? d : {};
   } catch(e) { console.warn('Could not read the in-person list:', e.message); }
-}
-// Called whenever feedback is saved. Adds, keeps or removes that lesson's
-// question to match what the saved message actually says. If this fails the
-// feedback itself is already saved; say so and carry on.
-async function trackQuestion(r, text){
-  // You do not ask yourself anything, so nothing from your own lessons goes on the list.
-  if (r && r.teacher === 'John') { renderAskList(); return; }
-  const key = 'q' + r.id;
-  const q = inPersonQuestion(text);
-  const had = questions[key];
-  try {
-    if (q) {
-      const same = had && had.question === q;
-      const entry = { recordId: r.id, teacher: r.teacher, course: r.course || '', date: r.date || '',
-                      question: q, askedAt: same ? (had.askedAt || todayStr()) : todayStr(),
-                      status: same ? (had.status || 'open') : 'open' };
-      if (same && had.doneAt) entry.doneAt = had.doneAt;
-      const res = await fetch(FB_URL() + '/questions/' + key + '.json',
-        { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(entry) });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      questions[key] = entry;
-    } else if (had && had.status !== 'done') {
-      // The message was rewritten without the question, so it comes off the list.
-      const patch = {}; patch[key] = null;
-      const res = await fetch(FB_URL() + '/questions.json',
-        { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patch) });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      delete questions[key];
-    }
-  } catch(e) {
-    log('Feedback saved, but your in-person list could not be updated: ' + e.message);
-  }
+  buildAsks();
   renderAskList();
+  syncAsks();   // in the background; the list on screen does not wait for it
+}
+
+// The message on one lesson, wherever it was written.
+function sentMessage(r){
+  const f = feedback[r.id] || feedback[String(r.id)] || {};
+  return { text: f.adminFeedback || r.adminFeedback || '', at: f.adminFeedbackAt || r.adminFeedbackAt || '',
+           reply: f.teacherReply || r.teacherReply || '' };
+}
+let derivedKeys = new Set();   // lessons whose question list comes from the message itself
+function buildAsks(){
+  asks = {}; derivedKeys = new Set();
+  records.forEach(r => {
+    if (!r || !r.id || r.teacher === 'John') return;
+    const m = sentMessage(r);
+    if (!m.text || fbStamp(m.at) < QUESTIONS_FROM) return;
+    const key = 'q' + r.id;
+    derivedKeys.add(key);
+    const qs = questionsIn(m.text);
+    if (!qs.length) return;                       // no question in it, nothing to follow up
+    const q = qs.join(' ');
+    const s = questions[key];
+    if (s && s.status === 'done' && s.question === q) return;   // already ticked off
+    asks[key] = { key: key, recordId: r.id, teacher: r.teacher, course: r.course || '', date: r.date || '',
+                  question: q, askedAt: String(m.at).split(' ')[0] || '', reply: m.reply };
+  });
+  // Stored ones this page cannot check (Monday messages, lessons older than the weeks loaded).
+  Object.keys(questions).forEach(k => {
+    const s = questions[k];
+    if (!s || !s.question || s.status === 'done' || s.teacher === 'John' || derivedKeys.has(k)) return;
+    asks[k] = Object.assign({ key: k }, s);
+  });
+}
+// Keep the stored copies in step with what the messages say. One entry at a time,
+// never the whole list. Returns '' or the reason it could not.
+async function syncAsks(onlyKey){
+  const put = (k, v) => fetch(FB_URL() + '/questions/' + k + '.json',
+    { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(v) });
+  try {
+    for (const k of Array.from(derivedKeys)) {
+      if (onlyKey && k !== onlyKey) continue;
+      const a = asks[k], s = questions[k];
+      if (a) {
+        if (s && s.question === a.question && s.status !== 'done') continue;
+        const entry = { recordId: a.recordId, teacher: a.teacher, course: a.course, date: a.date,
+                        question: a.question, askedAt: a.askedAt || todayStr(), status: 'open' };
+        const res = await put(k, entry);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        questions[k] = entry;
+      } else if (s && s.status !== 'done') {
+        const patch = {}; patch[k] = null;
+        const res = await fetch(FB_URL() + '/questions.json',
+          { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patch) });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        delete questions[k];
+      }
+    }
+    return '';
+  } catch(e) { return e.message || 'no reply'; }
+}
+// Called whenever feedback is saved here. The list comes from the message, so it
+// is right even if the copy below cannot be stored; say so and carry on.
+async function trackQuestion(r, text){
+  buildAsks();
+  renderAskList();
+  if (!r || r.teacher === 'John') return;
+  const failed = await syncAsks('q' + r.id);
+  if (failed) log('Feedback saved. Its question is on your list, but the stored copy could not be updated (' + failed + ').');
 }
 async function markAnswered(key){
-  const q = questions[key];
-  if (!q) return;
+  const a = asks[key];
+  if (!a) return;
   const btn = document.getElementById('ask-btn-' + key);
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
-    const done = { status: 'done', doneAt: todayStr() };
+    // The whole entry goes with the tick, so a question that is edited later
+    // comes back as a new one instead of staying ticked.
+    const done = { recordId: a.recordId || '', teacher: a.teacher, course: a.course || '', date: a.date || '',
+                   question: a.question, askedAt: a.askedAt || '', status: 'done', doneAt: todayStr() };
+    if (a.source) done.source = a.source;
     const res = await fetch(FB_URL() + '/questions/' + key + '.json',
-      { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(done) });
+      { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(done) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    questions[key] = Object.assign({}, q, done);
+    questions[key] = done;
   } catch(e) {
     log('Could not tick that off: ' + e.message);
   }
+  buildAsks();
   renderAskList();
 }
 // A question comes either from feedback on one lesson or from the Monday message
@@ -747,8 +808,7 @@ function askWhere(q){
   return (q.course || '') + ', lesson of ' + (q.date || '');
 }
 function openQuestions(){
-  return Object.keys(questions).map(k => Object.assign({ key: k }, questions[k]))
-    .filter(q => q && q.question && q.status !== 'done' && q.teacher !== 'John')
+  return Object.keys(asks).map(k => asks[k])
     .sort((a, b) => String(a.teacher).localeCompare(String(b.teacher)) || ((Number(a.recordId) || 0) - (Number(b.recordId) || 0)));
 }
 function renderAskList(){
@@ -759,7 +819,7 @@ function renderAskList(){
   const doneCount = Object.keys(questions).filter(k => questions[k] && questions[k].status === 'done' && questions[k].teacher !== 'John').length;
   if (!open.length && !doneCount) { sec.style.display = 'none'; return; }
   sec.style.display = '';
-  document.getElementById('askTitle').textContent = 'To ask in person (' + open.length + ')';
+  document.getElementById('askTitle').textContent = 'Questions to follow up (' + open.length + ')';
   document.getElementById('askCopyBtn').style.display = open.length ? '' : 'none';
   if (!open.length) {
     list.innerHTML = '<div style="font-size:13px;color:#64748b;">Nothing waiting. ' + doneCount + ' answered so far.</div>';
@@ -774,6 +834,7 @@ function renderAskList(){
     html += '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #fef3c7;">'
       + '<div style="flex:1;">'
       +   '<div style="font-size:13.5px;color:#1e293b;line-height:1.5;">' + escQ(q.question) + '</div>'
+      +   (q.reply ? '<div style="font-size:12.5px;color:#15803d;background:#f0fdf4;border-radius:6px;padding:4px 8px;margin-top:4px;line-height:1.45;"><b>' + escQ(q.teacher) + ' replied:</b> ' + escQ(q.reply) + '</div>' : '')
       +   '<div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">' + escQ(askWhere(q)) + ' · asked ' + escQ(q.askedAt || '') + '</div>'
       + '</div>'
       + '<button class="btn" id="ask-btn-' + escQ(q.key) + '" style="background:#16a34a;color:#fff;font-size:12px;padding:6px 12px;white-space:nowrap;" onclick="markAnswered(\'' + escQ(q.key) + '\')">✓ Answered</button>'
@@ -783,10 +844,11 @@ function renderAskList(){
   list.innerHTML = html;
 }
 function askListText(){
-  let out = 'To ask in person\n', current = null;
+  let out = 'Questions to follow up\n', current = null;
   openQuestions().forEach(q => {
     if (q.teacher !== current) { current = q.teacher; out += '\n' + q.teacher + '\n'; }
     out += '- ' + q.question + ' (' + askWhere(q) + ')\n';
+    if (q.reply) out += '  ' + q.teacher + ' replied: ' + q.reply + '\n';
   });
   return out;
 }
