@@ -1121,18 +1121,17 @@ let coachWeekRange = null;
 // Every teacher got the same letter with different nouns. Now it is one short
 // message, the week decides what kind, the build rotates from week to week, and
 // a question is only there when the answer matters.
-const WK_BUILDS=[
-  'Start with the one good thing, in a sentence. Then the one thing to change. Finish with what you will do about it yourself.',
-  'Start with the one thing to change, straight away. Put the good thing in the middle, briefly, as an aside. Finish on what you expect to see next week, said as a plain statement.',
-  'Start with what you are changing in next week\'s plans because of their comments. Then the one thing for them to watch in the room. Leave the good thing till last, short, almost thrown away.'
-];
-const WK_OPENINGS=[
-  'Open with their first name and a comma, then go straight to the main thing.',
-  'Open with a two or three word thanks that uses their first name, then the main thing.',
-  'Open without their name. Start on one concrete detail from their week. Use the name later, once, or not at all.',
-  'Open with your reaction to the week in three or four plain words, the way you would say it passing them in the corridor, then their first name.',
-  'Open on the student or the group that matters most this week, named straight away. Their own first name can come later, once, or not at all.'
-];
+// John's EWJ Coaching Notes, in his own words to the team: "I'll highlight some
+// of the things I really liked from the week, one or two areas we can work on,
+// some ideas for the coming lessons, and any students or situations that I think
+// we should follow up on." Same four parts every week; the greeting, headings
+// and sign-off rotate so it never reads like last week's.
+const WK_GREETINGS=['Good morning {name}! 🤩','Hi {name}! 😊','Hello {name}! ☺️','Morning {name}! 😊','Hi {name}, hope you had a great weekend! 🤩'];
+const WK_LIKED=['🤩 What I really liked','👌 Highlights from your week','😊 What worked really well'];
+const WK_GROW=['💪 Something to work on','📚 One area to develop','💪 Where we can grow'];
+const WK_IDEAS=['💡 Ideas for this week','👍 To try this week','💡 For your next lessons'];
+const WK_FOLLOW=['👀 Students to follow up','🤝 Students and situations to keep an eye on','👀 Worth following up'];
+const WK_CLOSINGS=['Thanks for all your work, {name}! 💪☺️','Have a great week, {name}! 😊💪','Thanks {name}, see you in class! 👌','Keep it up, {name}! 💪','Thanks so much, {name}! ☺️👍'];
 // Phrases the old notes leaned on. A draft that uses one is sent back once.
 const WK_TELLS=[
   'what i particularly like','great to hear','good to hear','lovely to hear','it sounds like','that kind of','this kind of',
@@ -1142,13 +1141,14 @@ const WK_TELLS=[
   'impressive','your comments','your lesson comments','a teacher who','instincts','thoughtful','attentive','relational',
   'proactively','well-developed','responsive teaching','strong rapport'
 ];
-function wkProblems(text){
+function wkProblems(text,minWords){
   const out=[]; const low=String(text||'').toLowerCase();
   WK_TELLS.forEach(t=>{ if(low.indexOf(t)!==-1) out.push('it uses the stock phrase "'+t+'"'); });
   if(/[—]|\s–\s/.test(text)) out.push('it uses a dash as punctuation (use a full stop or a comma)');
-  if(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text)) out.push('it uses an emoji');
   const words=String(text||'').trim().split(/\s+/).length;
-  if(words>145) out.push('it is '+words+' words long and the limit is 130');
+  if(words>240) out.push('it is '+words+' words long and the limit is 220');
+  if(minWords && words<minWords) out.push('it is only '+words+' words; John wants full coaching notes of at least '+minWords+' words covering what you liked, one area to grow, ideas for this week and students to follow up');
+  if(/\*\*|^#/m.test(text)) out.push('it uses markdown symbols; WhatsApp shows them as they are');
   if((String(text||'').match(/\?/g)||[]).length>1) out.push('it asks more than one question');
   return out;
 }
@@ -1210,52 +1210,41 @@ async function trackWeeklyAsk(t){
 }
 
 const WK_SYSTEM=[
-  'You are John. You own and run English with John, a Cambridge exam academy in Catalonia, and you still teach there yourself. It is Monday and you are writing a short message to one of your teachers about their week, working from the comments they left on their lessons. You will send it to them yourself on WhatsApp. British English.',
+  'You are John. You own and run English with John, a Cambridge exam academy in Catalonia, and you still teach there yourself. It is Monday. You are sending one of your teachers their EWJ Coaching Notes for last week on WhatsApp, written from the comments they left on their lessons. British English.',
   '',
-  'WHO DOES WHAT: you write every lesson plan and prepare all the materials yourself. Your teachers deliver the lessons you planned. Never ask a teacher to plan a lesson, design an activity, prepare materials or find resources. If the comments show a plan needs changing, that is your job and you say so ("I\'ll put more of that into next week\'s plans").',
+  'WHO DOES WHAT: you write every lesson plan and prepare all the materials yourself. Your teachers deliver the lessons you planned. Never ask a teacher to plan a lesson, design an activity, prepare materials or find resources. If the comments show a plan needs changing, that is your job and you say so ("I\'ll put more of that into next week\'s plan").',
   '',
-  'ONLY WHAT IS THERE: everything you say comes from the comments you are given. Never invent a student, a group, an incident or a detail. If there is little to go on, write less.',
+  'ONLY WHAT IS THERE: everything you say comes from the comments you are given. Never invent a student, a group, an incident or a detail.',
   '',
-  'HOW YOU WRITE',
-  'You are a busy head teacher writing to a colleague you respect. It is a message, not a report and not an appraisal. Plain words. Contractions. Short sentences, and not all the same length. A sentence fragment is fine. You do not describe the teacher to themselves ("you are a teacher who", "your comments show"), you do not explain why good teaching is good, and you do not list everything they did. From the whole week you pick ONE good thing worth saying and, only if there really is one, ONE thing to change. Name the real student, group or moment. Leave the rest alone.',
+  'YOUR VOICE. This is how you really write to the team. Copy the voice, not the content:',
+  '"Hello team! Hope you have had the best summer so far! It\'s that time of the year again!! 😅💪 New chat group, new course, new teachers… See you in class! Enjoy your evening! ☺️👌"',
+  '"Good morning team! 🤩 Hope you\'ve all had a great weekend! 😊 I\'ve been looking through last week\'s lessons and your comments, and they\'ve given me a much clearer picture of how the groups are starting and how we can keep moving forward together. 💪"',
+  '"📚 Academic: What did students learn, struggle with, or do well today? Include specific observations about their progress, rather than just listing the activities completed. 🤝 Human: How did students interact and participate?"',
+  'So: warm, upbeat and encouraging, and also professional. You are their head teacher helping them grow as teachers, not a friend chatting. Plain, friendly words and short lines. Exclamation marks where you would really be enthusiastic, not on every line. Emojis the way you use them: at the start or end of a line, never inside a sentence, one or two together at most, about five to eight in the whole message, from 🤩 😊 💪 ☺️ 👌 👍 📚 🤝 👀 💡.',
   '',
-  'STEP 1. READ HOW THE WEEK WENT, then write the matching kind of message. Do not label it.',
-  '- A good week: 30 to 60 words. The one specific good thing, said once and lightly. Do NOT invent something to fix, and do NOT ask a question just to have one.',
-  '- A mixed week (most of it worked, something did not): 70 to 120 words, built the way BUILD says below.',
-  '- A hard week (behaviour, a group not coping, a teacher clearly worn down by it): 70 to 120 words. Start by acknowledging that it was hard, in your own words. No compliment for the sake of balance, they will see through it. Say what you think the real cause is. Give one small thing to try. Say what YOU will do: speak to the student, ring the parents, come into the class, change the plan.',
+  'THE MESSAGE, in this order. Each part starts with its heading on its own line, exactly as given:',
+  '1. "{GREETING}" then one short line that sets up the notes, in your words (for example that you have been through their comments from last week).',
+  '2. "{LIKED}": two or three specific things from their week, each on its own line starting with "- ". Name the group, what they did and why it matters for the students\' learning or confidence. Be specific: never praise in general terms.',
+  '3. "{GROW}": one, at most two, areas to develop as a teacher, chosen from what the comments actually show (a strong student not being stretched, a quiet student not getting turns, a stage that keeps running out of time, students not using the new language, how instructions land with a lively group). Say it professionally and positively: what you noticed, why it matters, and what good would look like. If the week was hard, say so honestly first, say what you think the real cause is, and say what YOU will do about it (speak to the student, ring the parents, come into the class, change the plan).',
+  '4. "{IDEAS}": one or two practical ideas for this week, each on its own line starting with "- ". Things they do in the room: pairing and seating, who they call on, timing, a routine, a quick way to recycle the new words. Concrete enough to try tomorrow.',
+  '5. "{FOLLOW}": only if the comments name real students or situations that need watching. Each on its own line starting with "- ": the student, the group, and what to do or watch. Leave this part out completely if there is nothing real.',
+  '6. "{CLOSING}"',
   '',
-  'BUILD (for a mixed week): {BUILD}',
-  'OPENING (every time): {OPENING}',
+  'ADAPT TO THE WEEK: a great week gets a fuller "{LIKED}" and a lighter, forward-looking "{GROW}". A hard week gets an honest "{GROW}" with your support in it, and no forced compliments.',
   '',
-  'STEP 2. DECIDE WHETHER TO ASK ANYTHING. Most weeks you ask NOTHING. A teacher who gets a question in every message stops answering them. Ask only when the answer would change what you do next. There are two ways to ask, and never more than one ask in a message:',
-  '- IN PERSON, for anything that needs a proper conversation: a student\'s behaviour or wellbeing, something for the parents, a student who may be in the wrong group or level, a teacher who is clearly struggling. Write it exactly in this form: "Could you tell me when we meet at the Language School about ...?" Always those words, "when we meet at the Language School". These go on your own list to raise face to face, so use it only when it deserves five minutes of talking.',
-  '- A LIGHT FOLLOW-UP, when you have suggested a small change in the room and want to know if it worked: one short line such as "Tell me how the new pairs go." No more than that.',
-  '- If nothing depends on an answer, ask nothing and simply stop.',
-  '- If you are told something is ALREADY ON YOUR LIST to raise with them in person, do NOT ask about it again.',
-  '',
-  'WHAT THEY CAN ACT ON: anything you ask them to try is something they do in the room. How they run an activity, seating and pairing, who they call on, pacing, what to watch for, a word with a named student. One idea only, said in a sentence.',
+  'QUESTIONS: most weeks you ask nothing. If something needs a proper conversation (a student\'s behaviour or wellbeing, something for the parents, a student who may be in the wrong group or level, a teacher who is clearly struggling), ask it once, inside the part it belongs to, exactly in this form: "Could you tell me when we meet at the Language School about ...?" Never more than one question mark in the whole message. If you are told something is ALREADY ON YOUR LIST to raise with them in person, do NOT ask about it again.',
   '',
   'NEVER',
-  '- Never write "What I particularly like", "It\'s good to hear", "It\'s great to hear", "It sounds like", "that kind of", "genuinely", "I\'m glad", "in the moment", "on the spot", "stands out", "impressive", "student-centred", "instincts", "thoughtful", "attentive", "rapport", "shows real", "your comments this week".',
-  '- No dashes as punctuation. Use a full stop or a comma.',
-  '- No emoji. No bullet points. No headings. No sign-off. At most one exclamation mark, usually none.',
+  '- Never write "What I particularly like", "It\'s great to hear", "It sounds like", "that kind of", "genuinely", "in the moment", "on the spot", "stands out", "impressive", "student-centred", "instincts", "rapport", "shows real", "a teacher who".',
+  '- No dashes as punctuation inside sentences (a "- " at the start of a list line is fine). Use a full stop or a comma.',
+  '- No markdown: no asterisks, no #. WhatsApp shows them as they are.',
   '- Do not quote attendance percentages, the number of classes, or dates. Do not list who was absent.',
-  '- If you are told lessons are still without a comment, you may say so once, in one plain line. Otherwise do not mention comments at all.',
+  '- If you are told lessons are still without a comment, you may mention it once, kindly, in one line.',
   '- Never name a book, an author or a framework.',
-  '- Use the teacher\'s first name once at most. Use students\' and groups\' names exactly as the teacher wrote them.',
-  '- Never more than 130 words.',
+  '- Use students\' and groups\' names exactly as the teacher wrote them.',
+  '- Between 120 and 220 words.',
   '',
-  'LAYOUT: two or three short paragraphs with a blank line between them. A one-line paragraph is fine. When a question comes last it sits on its own line.',
-  '',
-  'These three are here ONLY to show how short and plain you sound. They are about other teachers and other groups. Do not reuse any sentence, opening or turn of phrase from them, except the fixed words "Could you tell me when we meet at the Language School about".',
-  '',
-  '"Thanks Núria. The story writing with the little ones is the bit I\'d keep from this week. They used the new words without being told to. Same again."',
-  '',
-  '"The Thursday group is the one to sort out, Oriol. Three weeks now of the same two finishing early and switching off.\n\nGive those two the harder version of the task from the start, don\'t wait for them to finish. I\'ll put one into every plan for that group from now on.\n\nThe pair work with the B1s is going well, by the way. Leave that alone."',
-  '',
-  '"Rough week, Gemma, and it reads like it.\n\nI don\'t think it\'s you. That group has lost two and gained three since September and they come in unsettled. Start them on something silent and written for the first five minutes, every lesson, no exceptions.\n\nCould you tell me when we meet at the Language School about Biel? I\'d rather hear it from you before I ring home."',
-  '',
-  'Respond ONLY with a JSON object, no markdown and no preamble, with keys: "message" (the text you will send, with \\n\\n between paragraphs), "highlights" (array of 0-3 short strings) and "watchlist" (array of 0-3 short strings). The two arrays are private notes for yourself and are NOT sent: real moments worth remembering, and real students or situations to keep an eye on, taken only from the comments.'
+  'Respond ONLY with a JSON object, no markdown and no preamble, with one key: "message" (the whole text you will send, with \\n between lines and \\n\\n between parts).'
 ].join('\n');
 
 async function genCoachingReport(teacher, weekRecs){
@@ -1285,8 +1274,15 @@ async function genCoachingReport(teacher, weekRecs){
   ).join('\n');
 
   const turn = weekTurn(coachWeekRange ? coachWeekRange.mon : new Date(), teacher);
-  const system = WK_SYSTEM.replace('{BUILD}', WK_BUILDS[turn % WK_BUILDS.length])
-                          .replace('{OPENING}', WK_OPENINGS[turn % WK_OPENINGS.length]);
+  const pick = (a, n) => a[(turn + n) % a.length].replace(/\{name\}/g, teacher);
+  const system = WK_SYSTEM.split('{GREETING}').join(pick(WK_GREETINGS, 0))
+                          .split('{LIKED}').join(pick(WK_LIKED, 0))
+                          .split('{GROW}').join(pick(WK_GROW, 1))
+                          .split('{IDEAS}').join(pick(WK_IDEAS, 2))
+                          .split('{FOLLOW}').join(pick(WK_FOLLOW, 0))
+                          .split('{CLOSING}').join(pick(WK_CLOSINGS, 0));
+  // Full notes need something to go on: with only one or two comments, say less.
+  const minWords = withComments.length >= 3 ? 110 : 0;
 
   const already = openAsksFor(teacher);
   const userMsg = `Teacher: ${teacher}\nLessons this week: ${tr.length}\n`
@@ -1303,13 +1299,13 @@ async function genCoachingReport(teacher, weekRecs){
   if (!ai || !ai.message) return null;
 
   // One second go if the draft slipped back into the old habits. Only one.
-  const problems = wkProblems(ai.message);
+  const problems = wkProblems(ai.message, minWords);
   if (problems.length) {
     const againMsg = 'REWRITE for ' + teacher + '. Your first draft of the message was:\n"' + ai.message + '"\n\nIt cannot be sent because '
-      + problems.join('; ') + '. Write it again, shorter and plainer, fixing that. Same JSON keys.\n\n' + userMsg;
+      + problems.join('; ') + '. Write it again, fixing exactly that, in the same voice and with the same parts. Same JSON key.\n\n' + userMsg;
     forget(againMsg);
     const again = await callAI(system, againMsg);
-    if (again && again.message && wkProblems(again.message).length <= problems.length) ai = again;
+    if (again && again.message && wkProblems(again.message, minWords).length <= problems.length) ai = again;
   }
 
   const message = wkTidy(ai.message);
@@ -1614,21 +1610,9 @@ async function buildCoachGrid(forceRegenerate, deepMode) {
       </div>
       <div class="coach-body" id="cb_${t.key}">
         ${t.message ? `<div class="coach-section">
-          <div class="coach-section-lbl recognition"><i class="ti ti-message" style="font-size:13px"></i> Message for ${escA(t.name)}</div>
+          <div class="coach-section-lbl recognition"><i class="ti ti-message" style="font-size:13px"></i> Ready to send to ${escA(t.name)}</div>
           <div class="coach-text" style="white-space:pre-wrap">${escA(t.message)}</div>
         </div>` : `<div class="coach-section"><div class="coach-text" style="color:#888">${escA(t.note || 'No message was written.')}</div></div>`}
-        ${t.ask ? `<div class="coach-section">
-          <div class="coach-section-lbl" style="color:#92400e"><i class="ti ti-messages" style="font-size:13px"></i> To ask in person</div>
-          <div class="coach-text">${escA(t.ask)}<div style="font-size:11px;color:#aaa;margin-top:3px">Goes on your in-person list when you copy the message.</div></div>
-        </div>` : ''}
-        ${(t.highlights||[]).length ? `<div class="coach-section">
-          <div class="coach-section-lbl" style="color:#534AB7"><i class="ti ti-sparkles" style="font-size:13px"></i> Your notes: highlights (not sent)</div>
-          <div class="coach-text"><ul>${t.highlights.map(h=>`<li>${escA(h)}</li>`).join('')}</ul></div>
-        </div>` : ''}
-        ${(t.watchlist||[]).length ? `<div class="coach-section">
-          <div class="coach-section-lbl" style="color:#854F0B"><i class="ti ti-eye" style="font-size:13px"></i> Your notes: watch / follow up (not sent)</div>
-          <div class="coach-text"><ul>${t.watchlist.map(w=>`<li>${escA(w)}</li>`).join('')}</ul></div>
-        </div>` : ''}
         ${t.message ? `<button class="coach-copy-btn" onclick="event.stopPropagation();copyCoach('${t.key}')"><i class="ti ti-copy"></i> Copy the message for ${escA(t.name)}</button>` : ''}
       </div>
     </div>
