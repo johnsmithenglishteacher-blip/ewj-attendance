@@ -735,15 +735,34 @@ function buildAsks(){
     const s = questions[key];
     if (s && s.status === 'done' && s.question === q) return;   // already ticked off
     asks[key] = { key: key, recordId: r.id, teacher: r.teacher, course: r.course || '', date: r.date || '',
+                  day: r.day || '', time: r.time || '', students: namedStudents(q, r.students),
                   question: q, askedAt: String(m.at).split(' ')[0] || '', reply: m.reply };
   });
   // Stored ones this page cannot check (Monday messages, lessons older than the weeks loaded).
   Object.keys(questions).forEach(k => {
     const s = questions[k];
     if (!s || !s.question || s.status === 'done' || s.teacher === 'John' || derivedKeys.has(k)) return;
-    asks[k] = Object.assign({ key: k }, s);
+    const rec = s.recordId ? records.find(x => String(x.id) === String(s.recordId)) : null;
+    asks[k] = Object.assign({ key: k }, s, rec ? { day: s.day || rec.day || '', time: s.time || rec.time || '',
+                                                   students: namedStudents(s.question, rec.students) } : {});
   });
 }
+// The students a question names, with their full names from that lesson's
+// register: "Arlet" in the question becomes "Arlet Regue".
+function plainName(t){ return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+// Capitalised words that start a question are not names.
+const NOT_NAMES = new Set('could can would will what how did do does is are was were tell have has when where why who which and but so the language school i if or also then there this that'.split(' '));
+function namedStudents(question, students){
+  const words = new Set((String(question || '').match(/[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ·]+/g) || []).map(plainName).filter(w => !NOT_NAMES.has(w)));
+  const out = [];
+  (students || []).forEach(st => {
+    const name = String((st && st.name) || st || '').trim();
+    const first = plainName(name.split(/\s+/)[0]);
+    if (first && words.has(first) && out.indexOf(name) === -1) out.push(name);
+  });
+  return out;
+}
+function whoLine(q){ return q.students && q.students.length ? 'Student' + (q.students.length > 1 ? 's' : '') + ': ' + q.students.join(', ') : ''; }
 // Keep the stored copies in step with what the messages say. One entry at a time,
 // never the whole list. Returns '' or the reason it could not.
 async function syncAsks(onlyKey){
@@ -756,7 +775,7 @@ async function syncAsks(onlyKey){
       if (a) {
         if (s && s.question === a.question && s.status !== 'done') continue;
         const entry = { recordId: a.recordId, teacher: a.teacher, course: a.course, date: a.date,
-                        question: a.question, askedAt: a.askedAt || todayStr(), status: 'open' };
+                        day: a.day || '', time: a.time || '', question: a.question, askedAt: a.askedAt || todayStr(), status: 'open' };
         const res = await put(k, entry);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         questions[k] = entry;
@@ -805,7 +824,8 @@ async function markAnswered(key){
 // written on the Morning dashboard. Say which, in words.
 function askWhere(q){
   if (q && q.source === 'weekly') return 'Monday message, ' + (q.date || '');
-  return (q.course || '') + ', lesson of ' + (q.date || '');
+  const slot = [q.day, q.time].filter(Boolean).join(' ');
+  return (q.course || '') + ', ' + (slot ? slot + ', ' : '') + 'lesson of ' + (q.date || '');
 }
 function openQuestions(){
   return Object.keys(asks).map(k => asks[k])
@@ -834,6 +854,7 @@ function renderAskList(){
     html += '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #fef3c7;">'
       + '<div style="flex:1;">'
       +   '<div style="font-size:13.5px;color:#1e293b;line-height:1.5;">' + escQ(q.question) + '</div>'
+      +   (whoLine(q) ? '<div style="font-size:12.5px;color:#1e293b;font-weight:700;margin-top:2px;">' + escQ(whoLine(q)) + '</div>' : '')
       +   (q.reply ? '<div style="font-size:12.5px;color:#15803d;background:#f0fdf4;border-radius:6px;padding:4px 8px;margin-top:4px;line-height:1.45;"><b>' + escQ(q.teacher) + ' replied:</b> ' + escQ(q.reply) + '</div>' : '')
       +   '<div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">' + escQ(askWhere(q)) + ' · asked ' + escQ(q.askedAt || '') + '</div>'
       + '</div>'
@@ -848,6 +869,7 @@ function askListText(){
   openQuestions().forEach(q => {
     if (q.teacher !== current) { current = q.teacher; out += '\n' + q.teacher + '\n'; }
     out += '- ' + q.question + ' (' + askWhere(q) + ')\n';
+    if (whoLine(q)) out += '  ' + whoLine(q) + '\n';
     if (q.reply) out += '  ' + q.teacher + ' replied: ' + q.reply + '\n';
   });
   return out;
