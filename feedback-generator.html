@@ -181,7 +181,10 @@ const FB_URL = () => {
   const typed = (document.getElementById('fbUrl').value || '').trim().replace(/\/+$/,'');
   return /^https:\/\/[a-z0-9-]+\.(europe-west1\.)?firebasedatabase\.app$/i.test(typed) ? typed : DEFAULT_FB_URL;
 };
-const API_KEY = () => document.getElementById('apiKey').value.trim();
+// A key is plain letters, digits and dashes. Anything else that came along with a
+// paste (a space, a line break, an invisible character from a web page or a note)
+// makes the browser refuse to send the request at all, so it is dropped here.
+const API_KEY = () => document.getElementById('apiKey').value.replace(/[^\x21-\x7E]/g, '');
 
 let records = [];
 let missingCommentRecs = [];

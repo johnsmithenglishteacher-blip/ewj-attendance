@@ -461,9 +461,12 @@ function loadApiKey(){
   }
 }
 function getApiKey(){
-  const v=document.getElementById('apiKeyInput').value.trim();
+  // Only the characters a key can contain: a stray invisible one from a paste
+  // makes the browser refuse to send the request.
+  const clean=x=>String(x||'').replace(/[^\x21-\x7E]/g,'');
+  const v=clean(document.getElementById('apiKeyInput').value);
   if(v)return v;
-  try{return localStorage.getItem('ewj_api_key')||'';}catch(e){return '';}
+  try{return clean(localStorage.getItem('ewj_api_key'));}catch(e){return '';}
 }
 
 let lastAIError = null;
