@@ -1,0 +1,335 @@
+/**
+ * ENGLISH WITH JOHN: morning email of what to ask your teachers in person
+ * ------------------------------------------------------------------------
+ * Runs inside your own Google account, every weekday morning.
+ * It reads from the attendance database:
+ *   1. the feedback you have sent since 12 Nov 2026: every question in it is
+ *      one to follow up, whether the AI wrote it or you added it yourself,
+ *      in the feedback generator or in the register,
+ *   2. your list of questions (your ticks, and the Monday-message questions),
+ *   3. the timetable, to see which teachers have lessons today.
+ * Then it emails YOU. It sends nothing to anyone else and changes nothing in
+ * the database. It only reads.
+ *
+ * TO SET IT UP (once):   choose "setup" in the menu at the top and press Run.
+ * TO TRY IT ANY TIME:    choose "sendNow" and press Run.
+ * TO SWITCH IT OFF:      choose "stop" and press Run.
+ */
+
+// ── The only lines you might ever want to change ────────────────────────────
+var SEND_HOUR   = 7;                         // 7 = it arrives between 7 and 8 in the morning
+var MY_NAME     = 'John';                    // your name on the timetable
+// ────────────────────────────────────────────────────────────────────────────
+
+var DB        = 'https://emglish-with-john-default-rtdb.europe-west1.firebasedatabase.app';
+var GENERATOR = 'https://johnsmithenglishteacher-blip.github.io/ewj-attendance/feedback-generator.html';
+var TZ        = 'Europe/Madrid';
+var WEEKDAYS  = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+// Feedback sent before this day used the old style, which ended every message
+// with a question, so it is left out.
+var QUESTIONS_FROM = new Date(2026, 10, 12, 0, 0, 0).getTime();
+
+// Run this once. It sets the daily timer and sends you today's email straight
+// away so you can see it works.
+function setup() {
+  stop();
+  ScriptApp.newTrigger('morningEmail').timeBased().everyDays(1).atHour(SEND_HOUR).inTimezone(TZ).create();
+  sendNow();
+}
+
+// Switches the daily email off. Run setup again to switch it back on.
+function stop() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'morningEmail') ScriptApp.deleteTrigger(t);
+  });
+}
+
+// What the timer runs each morning. Nothing at weekends.
+function morningEmail() {
+  var day = Utilities.formatDate(new Date(), TZ, 'EEEE');
+  if (WEEKDAYS.indexOf(day) === -1) return;
+  send_(day, false);
+}
+
+// Sends today's email now, whatever the day and even if the list is empty.
+function sendNow() {
+  var day = Utilities.formatDate(new Date(), TZ, 'EEEE');
+  send_(WEEKDAYS.indexOf(day) === -1 ? 'Monday' : day, true);
+}
+
+function send_(day, always) {
+  var me = Session.getEffectiveUser().getEmail();
+  var label = Utilities.formatDate(new Date(), TZ, 'EEEE d MMMM');
+  var questions, schedule = null;
+  try {
+    questions = read_('questions');
+  } catch (e) {
+    MailApp.sendEmail(me, 'EWJ: could not read your in-person list this morning',
+      'The morning email could not read the list of questions from the attendance database.\n\n'
+      + 'What came back: ' + e.message + '\n\n'
+      + 'If it happens once, ignore it. If it happens every day, the database rules have probably '
+      + 'been changed and this script needs updating to match.\n\n'
+      + 'Your list is still here: ' + GENERATOR);
+    return;
+  }
+  try { schedule = read_('schedule'); } catch (e2) { schedule = null; }
+  // The questions in the messages themselves. If this cannot be read, the stored
+  // list still goes out, and the email says so.
+  var feedback = null, note = '';
+  try { feedback = read_('feedback'); }
+  catch (e3) { note = 'The sent feedback could not be read this morning, so a question you added yourself since the generator was last opened may be missing.'; }
+  var open = gather_(questions, feedback, readRecords_);
+
+  var mail = build_(day, label, open, schedule, note);
+  if (!mail.send && !always) return;
+  MailApp.sendEmail({ to: me, subject: mail.subject, body: mail.text, htmlBody: mail.html });
+}
+
+// Teacher, group and date for lessons the stored list does not cover yet.
+function readRecords_(ids) {
+  var out = {};
+  if (!ids.length) return out;
+  var res = UrlFetchApp.fetchAll(ids.map(function (id) {
+    return { url: DB + '/records/r' + id + '.json', muteHttpExceptions: true };
+  }));
+  res.forEach(function (r, i) {
+    try { if (r.getResponseCode() === 200) { var v = JSON.parse(r.getContentText()); if (v) out[ids[i]] = v; } } catch (e) {}
+  });
+  return out;
+}
+
+function read_(node) {
+  var res = UrlFetchApp.fetch(DB + '/' + node + '.json', { muteHttpExceptions: true });
+  var code = res.getResponseCode();
+  if (code !== 200) throw new Error('HTTP ' + code);
+  return JSON.parse(res.getContentText());
+}
+
+// ── Everything below only works things out. It reads and sends nothing. ─────
+
+function list_(x) {
+  if (!x) return [];
+  if (Array.isArray(x)) return x.filter(function (v) { return v && typeof v === 'object'; });
+  return Object.keys(x).map(function (k) { return x[k]; }).filter(function (v) { return v && typeof v === 'object'; });
+}
+function norm_(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ''); }
+function esc_(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function where_(q) {
+  if (q.source === 'weekly') return 'Monday message, ' + (q.date || '');
+  var slot = [q.day, q.time].filter(Boolean).join(' ');
+  return (q.course ? q.course + ', ' : '') + (slot ? slot + ', ' : '') + 'lesson of ' + (q.date || '');
+}
+// The students a question names, with their full names from that lesson's
+// register: "Arlet" in the question becomes "Arlet Regue".
+function plain_(t) { return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+// Capitalised words that start a question are not names.
+var NOT_NAMES_ = {}; 'could can would will what how did do does is are was were tell have has when where why who which and but so the language school i if or also then there this that'.split(' ').forEach(function (w) { NOT_NAMES_[w] = true; });
+function namedStudents_(question, students) {
+  var words = {};
+  (String(question || '').match(/[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ·]+/g) || []).forEach(function (w) { if (!NOT_NAMES_[plain_(w)]) words[plain_(w)] = true; });
+  var out = [];
+  (students || []).forEach(function (s) {
+    var name = String((s && s.name) || s || '').trim();
+    var first = plain_(name.split(/\s+/)[0]);
+    if (first && words[first] && out.indexOf(name) === -1) out.push(name);
+  });
+  return out;
+}
+// A question often says "she" or "him" because the student was named a line
+// earlier. Then the names come from the whole message instead.
+function whoLine_(q) {
+  if (!q.students || !q.students.length) return '';
+  if (q.namesFrom === 'message') return 'Named in the message: ' + q.students.join(', ');
+  return 'Student' + (q.students.length > 1 ? 's' : '') + ': ' + q.students.join(', ');
+}
+
+function questionsIn_(text) {
+  var out = [];
+  String(text || '').split(/\n+/).forEach(function (line) {
+    (line.match(/[^.?!]*\?/g) || []).forEach(function (q) {
+      q = q.replace(/^[\s"'“‘(\-–—•]+/, '').replace(/\s+$/, '');
+      if (q.length > 3) out.push(q);
+    });
+  });
+  return out;
+}
+function fbStamp_(s) {
+  var m = String(s || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return m ? new Date(+m[3], +m[2] - 1, +m[1], 12, 0, 0).getTime() : 0;
+}
+
+// The open questions: every question in feedback sent since QUESTIONS_FROM,
+// unless you ticked that exact question off, plus stored ones no message covers
+// (the Monday messages). Returns a list; the database is not touched.
+function gather_(questions, feedback, getRecords) {
+  var stored = (questions && typeof questions === 'object') ? questions : {};
+  var fromMsg = {}, covered = {}, need = [], textById = {};
+  list_(feedback).forEach(function (f) { if (f.recordId != null) textById[f.recordId] = f.adminFeedback || ''; });
+  list_(feedback).forEach(function (f) {
+    if (f.recordId == null || fbStamp_(f.adminFeedbackAt) < QUESTIONS_FROM) return;
+    var key = 'q' + f.recordId;
+    covered[key] = true;
+    var qs = questionsIn_(f.adminFeedback);
+    if (!qs.length) return;
+    var q = qs.join(' ');
+    var s = stored[key];
+    if (s && s.status === 'done' && s.question === q) return;
+    fromMsg[key] = { recordId: f.recordId, question: q, askedAt: String(f.adminFeedbackAt || '').split(' ')[0],
+                     reply: f.teacherReply || '', status: 'open' };
+    need.push(f.recordId);
+  });
+  // Stored ones from older messages need their lesson looked up too.
+  Object.keys(stored).forEach(function (key) {
+    var s = stored[key];
+    if (s && !covered[key] && s.recordId && s.status !== 'done' && need.indexOf(s.recordId) === -1) need.push(s.recordId);
+  });
+  var recs = {};
+  try { if (need.length) recs = getRecords(need) || {}; } catch (e) { recs = {}; }   // names and times are a bonus, never a reason to fail
+  function lesson_(e, r) {
+    e.day = e.day || r.day || '';
+    e.time = e.time || r.time || '';
+    e.students = namedStudents_(e.question, r.students);
+    e.namesFrom = 'question';
+    if (!e.students.length) { e.students = namedStudents_(textById[e.recordId] || '', r.students); e.namesFrom = 'message'; }
+    return e;
+  }
+  var out = [];
+  Object.keys(fromMsg).forEach(function (key) {
+    var e = fromMsg[key], s = stored[key] || {}, r = recs[e.recordId] || {};
+    e.teacher = s.teacher || r.teacher || '';
+    e.course = s.course || r.course || '';
+    e.date = s.date || r.date || '';
+    lesson_(e, r);
+    if (e.teacher) out.push(e);
+  });
+  Object.keys(stored).forEach(function (key) {
+    var s = stored[key];
+    if (!s || covered[key] || !s.question || s.status === 'done') return;
+    var e = {}; Object.keys(s).forEach(function (k) { e[k] = s[k]; });
+    out.push(s.recordId ? lesson_(e, recs[s.recordId] || {}) : e);
+  });
+  return out;
+}
+
+function build_(day, label, questions, schedule, note) {
+  var slots = list_(schedule).filter(function (s) { return s.teacher && s.day; });
+  var haveTimetable = slots.length > 0;
+
+  var open = list_(questions).filter(function (q) {
+    return q.question && q.teacher && q.status !== 'done' && q.teacher !== MY_NAME;
+  });
+
+  function todaySlots(teacher) {
+    return slots.filter(function (s) { return s.teacher === teacher && s.day === day; })
+                .sort(function (a, b) { return String(a.time).localeCompare(String(b.time)); });
+  }
+
+  // Group the open questions by teacher.
+  var byTeacher = {};
+  open.forEach(function (q) { (byTeacher[q.teacher] = byTeacher[q.teacher] || []).push(q); });
+
+  var today = [], later = [];
+  Object.keys(byTeacher).sort().forEach(function (t) {
+    var qs = byTeacher[t];
+    var mine = haveTimetable ? todaySlots(t) : [];
+    if (mine.length) {
+      // Questions about a group that is in today come first.
+      qs.forEach(function (q) {
+        var hit = mine.filter(function (s) { return q.course && norm_(s.course) === norm_(q.course); })[0];
+        q._today = hit ? hit.time : '';
+      });
+      qs.sort(function (a, b) { return (a._today ? 0 : 1) - (b._today ? 0 : 1); });
+      today.push({ teacher: t, from: mine[0].time, qs: qs });
+    } else {
+      later.push({ teacher: t, qs: qs });
+    }
+  });
+  today.sort(function (a, b) { return String(a.from).localeCompare(String(b.from)); });
+
+  var nToday = today.reduce(function (n, g) { return n + g.qs.length; }, 0);
+  var nLater = later.reduce(function (n, g) { return n + g.qs.length; }, 0);
+
+  // ── Subject ──
+  var subject;
+  if (!haveTimetable && open.length) subject = 'EWJ: ' + open.length + ' to follow up';
+  else if (nToday) subject = 'EWJ: ' + nToday + ' to ask today (' + today.map(function (g) { return g.teacher; }).join(', ') + ')';
+  else if (nLater) subject = 'EWJ: nothing for today\'s teachers, ' + nLater + ' waiting';
+  else subject = 'EWJ: nothing waiting to follow up';
+
+  // ── Body, as plain text and as HTML ──
+  var T = [], H = [];
+  T.push(label + '.');
+  H.push('<p style="margin:0 0 14px;color:#475569;">' + esc_(label) + '.</p>');
+
+  if (note) {
+    T.push('', note);
+    H.push('<p style="color:#b45309;">' + esc_(note) + '</p>');
+  }
+  if (!haveTimetable && open.length) {
+    T.push('', 'The timetable could not be read this morning, so this is the whole list.');
+    H.push('<p style="color:#b45309;">The timetable could not be read this morning, so this is the whole list.</p>');
+  }
+
+  if (today.length) {
+    T.push('', 'TEACHING TODAY');
+    H.push('<h3 style="margin:18px 0 6px;font-size:13px;letter-spacing:.06em;color:#92400e;">TEACHING TODAY</h3>');
+    today.forEach(function (g) {
+      T.push('', g.teacher + ' (first lesson ' + g.from + ')');
+      H.push('<p style="margin:12px 0 4px;"><b>' + esc_(g.teacher) + '</b> <span style="color:#64748b;">first lesson ' + esc_(g.from) + '</span></p>');
+      g.qs.forEach(function (q) {
+        var note = where_(q) + (q._today ? '. This group is in today at ' + q._today : '') + '.';
+        T.push('- ' + q.question);
+        if (whoLine_(q)) T.push('  ' + whoLine_(q));
+        T.push('  ' + note);
+        if (q.reply) T.push('  ' + g.teacher + ' replied: ' + q.reply);
+        H.push('<div style="margin:0 0 8px 14px;">' + esc_(q.question)
+             + (whoLine_(q) ? '<br><span style="font-size:13px;color:#1e293b;font-weight:bold;">' + esc_(whoLine_(q)) + '</span>' : '')
+             + (q.reply ? '<br><span style="font-size:13px;color:#15803d;"><b>' + esc_(g.teacher) + ' replied:</b> ' + esc_(q.reply) + '</span>' : '')
+             + '<br><span style="font-size:12px;color:#64748b;">' + esc_(note) + '</span></div>');
+      });
+    });
+  } else if (haveTimetable && open.length) {
+    T.push('', 'None of today\'s teachers has a question waiting.');
+    H.push('<p>None of today\'s teachers has a question waiting.</p>');
+  }
+
+  if (later.length) {
+    var head = haveTimetable ? 'ALSO WAITING' : 'WAITING';
+    T.push('', head);
+    H.push('<h3 style="margin:20px 0 6px;font-size:13px;letter-spacing:.06em;color:#64748b;">' + head + '</h3>');
+    later.forEach(function (g) {
+      T.push('', g.teacher);
+      H.push('<p style="margin:10px 0 4px;"><b>' + esc_(g.teacher) + '</b></p>');
+      g.qs.forEach(function (q) {
+        T.push('- ' + q.question);
+        if (whoLine_(q)) T.push('  ' + whoLine_(q));
+        T.push('  ' + where_(q) + '.');
+        if (q.reply) T.push('  ' + g.teacher + ' replied: ' + q.reply);
+        H.push('<div style="margin:0 0 8px 14px;color:#334155;">' + esc_(q.question)
+             + (whoLine_(q) ? '<br><span style="font-size:13px;color:#1e293b;font-weight:bold;">' + esc_(whoLine_(q)) + '</span>' : '')
+             + (q.reply ? '<br><span style="font-size:13px;color:#15803d;"><b>' + esc_(g.teacher) + ' replied:</b> ' + esc_(q.reply) + '</span>' : '')
+             + '<br><span style="font-size:12px;color:#64748b;">' + esc_(where_(q)) + '.</span></div>');
+      });
+    });
+  }
+
+  if (!open.length) {
+    T.push('', 'Nothing is waiting. This one is only to show the morning email is still running.');
+    H.push('<p>Nothing is waiting. This one is only to show the morning email is still running.</p>');
+  } else {
+    T.push('', 'Tick them off once you have talked: ' + GENERATOR);
+    H.push('<p style="margin-top:20px;"><a href="' + GENERATOR + '">Tick them off once you have talked</a></p>');
+  }
+
+  // With nothing at all waiting, a note on Mondays only, so silence is never
+  // mistaken for the email having stopped.
+  var send = open.length > 0 || day === 'Monday';
+
+  return {
+    send: send, subject: subject, text: T.join('\n'),
+    html: '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1e293b;max-width:600px;">' + H.join('') + '</div>',
+    today: today, later: later
+  };
+}
