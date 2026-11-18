@@ -750,27 +750,75 @@ function buildAsks(){
                                                    whoFor(s.question, sentMessage(rec).text, rec.students)) : {});
   });
 }
-// The students a question names, with their full names from that lesson's
-// register: "Arlet" in the question becomes "Arlet Regue".
-function plainName(t){ return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
-// Capitalised words that start a question are not names.
-const NOT_NAMES = new Set('could can would will what how did do does is are was were tell have has when where why who which and but so the language school i if or also then there this that'.split(' '));
-function namedStudents(question, students){
-  const words = new Set((String(question || '').match(/[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ·]+/g) || []).map(plainName).filter(w => !NOT_NAMES.has(w)));
-  const out = [];
-  (students || []).forEach(st => {
-    const name = String((st && st.name) || st || '').trim();
-    const first = plainName(name.split(/\s+/)[0]);
-    if (first && words.has(first) && out.indexOf(name) === -1) out.push(name);
+
+// ── Matching names in a message to the lesson's register ──
+// Teachers and the AI do not always spell a name the way the register does
+// ("Dereck" for Derek, "Neithan" for Neizan), so a close spelling counts when
+// nothing matches exactly. If a surname is given ("Biel Fernández"), only that
+// student is kept, not every Biel in the group.
+function nmPlain(t) { return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+function nmDistance(a, b) {
+  var prev = [], cur, i, j;
+  for (j = 0; j <= b.length; j++) prev[j] = j;
+  for (i = 1; i <= a.length; i++) {
+    cur = [i];
+    for (j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function nmClose(a, b) {
+  var n = Math.min(a.length, b.length), d = nmDistance(a, b);
+  return (n >= 5 && d <= 1) || (n >= 6 && d <= 2);
+}
+var NM_SKIP = {}; ('could can would will what how did do does is are was were tell have has when where why who which and but so the language school '
+  + 'i if or also then there this that thanks thank good great well next last week monday tuesday wednesday thursday friday saturday sunday '
+  + 'english john hi hello morning keep same let lets it its he she they we you your my our ok yes no').split(' ').forEach(function (w) { NM_SKIP[w] = true; });
+function matchStudents(text, students) {
+  var words = [];
+  (String(text || '').match(/[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ·]+/g) || []).forEach(function (w) {
+    var p = nmPlain(w); if (!NM_SKIP[p] && words.indexOf(p) === -1) words.push(p);
+  });
+  var list = [];
+  (students || []).forEach(function (s) {
+    var name = String((s && s.name) || s || '').trim();
+    if (!name) return;
+    var parts = nmPlain(name).split(/\s+/);
+    list.push({ name: name, first: parts[0], rest: parts.slice(1) });
+  });
+  var out = [];
+  words.forEach(function (w) {
+    var hits = list.filter(function (s) { return s.first === w; });
+    if (!hits.length) hits = list.filter(function (s) { return nmClose(s.first, w); });
+    if (!hits.length) return;
+    var withSurname = hits.filter(function (s) { return s.rest.some(function (r) { return words.indexOf(r) !== -1; }); });
+    (withSurname.length ? withSurname : hits).forEach(function (s) { if (out.indexOf(s.name) === -1) out.push(s.name); });
   });
   return out;
 }
+// For a question that only says "that", "this", "her" or "him": the sentence
+// just before it in the message, which is what it is about.
+function questionContext(question, message) {
+  var q = String(question || ''), m = String(message || '');
+  if (!/\b(that|this|these|those|it|she|her|he|him|they|them)\b/i.test(q)) return '';
+  var at = m.indexOf(q);
+  if (at <= 0) return '';
+  var before = m.slice(0, at).replace(/\s+/g, ' ').trim();
+  var sentences = before.match(/[^.!?]+[.!?]+/g) || (before ? [before] : []);
+  var last = String(sentences[sentences.length - 1] || '').trim();
+  return last.length > 220 ? last.slice(0, 217) + '…' : last;
+}
+function namedStudents(question, students){ return matchStudents(question, students); }
 // A question often says "she" or "him" because the student was named a line
 // earlier. Then the names come from the whole message instead.
 function whoFor(question, message, students){
+  const about = questionContext(question, message);
   const inQ = namedStudents(question, students);
-  if (inQ.length) return { students: inQ, namesFrom: 'question' };
-  return { students: namedStudents(message, students), namesFrom: 'message' };
+  if (inQ.length) return { students: inQ, namesFrom: 'question', about: about };
+  // Names in the sentence it refers to first; only then the whole message.
+  const inAbout = about ? namedStudents(about, students) : [];
+  if (inAbout.length) return { students: inAbout, namesFrom: 'question', about: about };
+  return { students: namedStudents(message, students), namesFrom: 'message', about: about };
 }
 function whoLine(q){
   if (!q.students || !q.students.length) return '';
@@ -869,6 +917,7 @@ function renderAskList(){
       + '<div style="flex:1;">'
       +   '<div style="font-size:13.5px;color:#1e293b;line-height:1.5;">' + escQ(q.question) + '</div>'
       +   (whoLine(q) ? '<div style="font-size:12.5px;color:#1e293b;font-weight:700;margin-top:2px;">' + escQ(whoLine(q)) + '</div>' : '')
+      +   (q.about ? '<div style="font-size:12.5px;color:#475569;margin-top:2px;line-height:1.45;"><b>About:</b> ' + escQ(q.about) + '</div>' : '')
       +   (q.reply ? '<div style="font-size:12.5px;color:#15803d;background:#f0fdf4;border-radius:6px;padding:4px 8px;margin-top:4px;line-height:1.45;"><b>' + escQ(q.teacher) + ' replied:</b> ' + escQ(q.reply) + '</div>' : '')
       +   '<div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">' + escQ(askWhere(q)) + ' · asked ' + escQ(q.askedAt || '') + '</div>'
       + '</div>'
@@ -884,6 +933,7 @@ function askListText(){
     if (q.teacher !== current) { current = q.teacher; out += '\n' + q.teacher + '\n'; }
     out += '- ' + q.question + ' (' + askWhere(q) + ')\n';
     if (whoLine(q)) out += '  ' + whoLine(q) + '\n';
+    if (q.about) out += '  About: ' + q.about + '\n';
     if (q.reply) out += '  ' + q.teacher + ' replied: ' + q.reply + '\n';
   });
   return out;
