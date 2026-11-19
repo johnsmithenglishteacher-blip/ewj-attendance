@@ -986,7 +986,7 @@ async function bootFromFirebase(){
     lsSet('ewj-records',state.records);
     mergeFeedbackIntoRecords();
     if(ld){ld.style.color='#16a34a';ld.textContent='● Live';}
-    renderAll();
+    renderLater(renderAll);
   })();
 
   // Subscribe to live updates — re-render when any device changes data
@@ -1023,7 +1023,7 @@ async function bootFromFirebase(){
       state.records = merged.filter(r=>!isStaleRecord(r)&&!isDeletedRecord(r)).sort((a,b)=>(a.id||0)-(b.id||0));
       lsSet('ewj-records', state.records);
       mergeFeedbackIntoRecords();
-      if(state.tab==='log'||state.tab==='dashboard') renderAll();
+      if(state.tab==='log'||state.tab==='dashboard') renderLater(renderAll);
       else renderTabBar();
     } catch(e){}
   }, 300000);   // five minutes: the live stream handles the moment-to-moment changes
@@ -1037,7 +1037,7 @@ async function bootFromFirebase(){
     if(!arr.length && (state.schedule||[]).length){ console.warn('Ignored an empty timetable from the live stream'); return; }
     state.schedule = arr;
     lsSet('ewj-schedule', arr);
-    if(state.tab==='register'||state.tab==='manage') renderAll();
+    if(state.tab==='register'||state.tab==='manage') renderLater(renderAll);
   });
 
   // Subscribe to feedback changes
@@ -1057,7 +1057,7 @@ async function bootFromFirebase(){
     TEACHERS = arr;
     lsSet('ewj-teachers', arr);
     renderTeacherChips();
-    if(state.tab==='manage'||state.tab==='register'||state.tab==='log') renderAll();
+    if(state.tab==='manage'||state.tab==='register'||state.tab==='log') renderLater(renderAll);
   });
 
   fbSubscribe('ewj-hours', val => {
@@ -1332,7 +1332,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v18.2</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v19.0</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -1919,7 +1919,7 @@ function renderRegister(){
 }
 
 // ── Log tab ───────────────────────────────────────────────────────────────
-const logState={search:'',editing:null,draft:'',expanded:null,editingStudents:null,filterTeacher:'',filterDay:'',filterWeek:'',filterNoComment:false};
+const logState={search:'',editing:null,draft:'',expanded:null,editingStudents:null,filterTeacher:'',filterDay:'',filterWeek:'',filterNoComment:false,show:40};
 
 // Week has been stored both as 36 and as "Week 36" over the life of this app.
 // Compare on the number so the week filter matches either.
@@ -1986,7 +1986,7 @@ function previousPanel(r){
     const by=(x.teacher&&x.teacher!==r.teacher)?' · '+escHtml(x.teacher):'';
     d.innerHTML='<div style="font-size:10px;font-weight:700;color:#94a3b8;margin-bottom:3px;">'+escHtml(x.date||'')+' · '+escHtml(x.week||'')+by+'</div>'
       +'<div style="color:#334155;">'+escHtml(x.comment)+'</div>'
-      +(adminFb?'<div style="margin-top:5px;padding:6px 9px;background:#eef2ff;border-radius:6px;color:#3730a3;">'
+      +(adminFb?'<div style="margin-top:5px;padding:6px 9px;background:#eef2ff;border-radius:6px;color:#3730a3;white-space:pre-wrap;">'
         +'<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;">John said</span><br>'
         +escHtml(adminFb)+'</div>':'');
     box.appendChild(d);
@@ -2174,6 +2174,17 @@ function renderLog(){
     }
   }
 
+  // A teacher's History used to draw every lesson of the course (150+ cards) on
+  // every redraw, which is slow on an older laptop or a phone. The newest 40 come
+  // first; older ones are one tap away. Searching and filters still see them all.
+  let olderCount=0;
+  if(at && !logState.search.trim() && !logState.filterWeek && !logState.filterDay && !logState.filterNoComment){
+    const keep=recs.slice(0, logState.show);
+    const open=[logState.editing, logState.expanded, logState.editingStudents].filter(Boolean);
+    recs.slice(logState.show).forEach(r=>{ if(open.some(id=>String(id)===String(r.id))) keep.push(r); });
+    olderCount=recs.length-keep.length;
+    recs=keep;
+  }
   recs.forEach(r=>{
     const nA=(r.students||[]).filter(s=>s.status==='absent'&&s.flag!=='dropped').length;
     const nL=(r.students||[]).filter(s=>s.status==='late').length;
@@ -2216,7 +2227,7 @@ function renderLog(){
         const fbWrap=document.createElement('div');fbWrap.style.cssText='padding:6px 13px 10px;background:#f8fafc;border-top:1px solid #f1f5f9;';
         if(r.adminFeedback){
           const fbDisp=document.createElement('div');fbDisp.style.cssText='font-size:12px;color:#4f46e5;margin-bottom:6px;padding:6px 9px;background:#eef2ff;border-radius:7px;';
-          fbDisp.innerHTML='<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;margin-right:5px;">Your feedback</span><span style="color:#3730a3">'+r.adminFeedback+'</span>'+(r.adminFeedbackAt?'<span style="font-size:10px;color:#94a3b8;display:block;margin-top:2px;">'+r.adminFeedbackAt+'</span>':'');
+          fbDisp.innerHTML='<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;margin-right:5px;">Your feedback</span><span style="color:#3730a3;white-space:pre-wrap;">'+r.adminFeedback+'</span>'+(r.adminFeedbackAt?'<span style="font-size:10px;color:#94a3b8;display:block;margin-top:2px;">'+r.adminFeedbackAt+'</span>':'');
           fbWrap.appendChild(fbDisp);
           // Show teacher reply if any
           if(r.teacherReply){
@@ -2251,7 +2262,7 @@ function renderLog(){
         const isUnread=!r.adminFeedbackRead;
         const fbTeacher=document.createElement('div');
         fbTeacher.style.cssText='margin:0 13px 0;padding:8px 11px;background:'+(isUnread?'#eef2ff':'#f8fafc')+';border:1.5px solid '+(isUnread?'#c7d2fe':'#e2e8f0')+';border-radius:8px 8px 0 0;';
-        fbTeacher.innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:'+(isUnread?'#4f46e5':'#94a3b8')+';margin-bottom:4px;">'+(isUnread?'&#128236; New feedback from John':'&#128172; Feedback from John')+'</div>'+'<div style="font-size:13px;color:#1e293b;">'+r.adminFeedback+'</div>'+(r.adminFeedbackAt?'<div style="font-size:10px;color:#94a3b8;margin-top:4px;">'+r.adminFeedbackAt+'</div>':'');
+        fbTeacher.innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:'+(isUnread?'#4f46e5':'#94a3b8')+';margin-bottom:4px;">'+(isUnread?'&#128236; New feedback from John':'&#128172; Feedback from John')+'</div>'+'<div style="font-size:13px;color:#1e293b;white-space:pre-wrap;">'+r.adminFeedback+'</div>'+(r.adminFeedbackAt?'<div style="font-size:10px;color:#94a3b8;margin-top:4px;">'+r.adminFeedbackAt+'</div>':'');
         card.appendChild(fbTeacher);
         if(r.teacherReply){
           const replyDiv=document.createElement('div');
@@ -2433,6 +2444,15 @@ function renderLog(){
     }
     wrap.appendChild(card);
   });
+  if(olderCount>0){
+    const more=document.createElement('button');
+    more.className='pill';
+    more.style.cssText='display:block;margin:12px auto 4px;padding:8px 18px;font-size:13px;';
+    more.textContent='Show older lessons ('+olderCount+' more)';
+    more.onclick=()=>{ logState.show+=40; renderLog(); };
+    wrap.appendChild(more);
+  }
+
 }
 
 // ── Dashboard tab ─────────────────────────────────────────────────────────
@@ -3841,20 +3861,44 @@ function mergeFeedbackIntoRecords(){
 function fbSubscribe_feedback(){
   const openIt = () => {
     const es=new EventSource(FB_URL+'/feedback.json');
-    es.addEventListener('put', e=>{
+    // The stream sends the whole list once, then ONE entry at a time ("/f123").
+    // Treating a one-entry message as the whole list emptied everyone's feedback
+    // and redrew their History on every single save anywhere in the school.
+    const applyFb=(path,data,isPatch)=>{
+      if(!state.feedback||typeof state.feedback!=='object') state.feedback={};
+      const parts=String(path||'/').split('/').filter(Boolean);
+      if(!parts.length){
+        if(isPatch){ Object.keys(data||{}).forEach(k=>applyFb('/'+k,data[k],false)); return; }
+        const fb={};
+        Object.values(data||{}).forEach(f=>{if(f&&f.recordId)fb[f.recordId]=f;});
+        state.feedback=fb; return;
+      }
+      // "/f123" or "/f123/teacherReply": find the entry by its key
+      const key=parts[0];
+      const rid=String(key).replace(/^f/,'');
+      const cur=state.feedback[rid]||state.feedback[Number(rid)]||null;
+      if(parts.length===1){
+        if(data===null){ delete state.feedback[rid]; delete state.feedback[Number(rid)]; return; }
+        const entry=isPatch?Object.assign({},cur||{},data):data;
+        if(entry&&typeof entry==='object'){ state.feedback[entry.recordId||rid]=entry; }
+        return;
+      }
+      if(!cur) return;   // a field of an entry we do not have yet: the next full load brings it
+      const next=Object.assign({},cur); next[parts[1]]=data;
+      state.feedback[cur.recordId||rid]=next;
+    };
+    const onMsg=isPatch=>e=>{
       try {
         const msg=JSON.parse(e.data);
-        const data=msg.data;
-        if(!data)return;
-        const fb={};
-        Object.values(data).forEach(f=>{if(f&&f.recordId)fb[f.recordId]=f;});
-        state.feedback=fb;
-        lsSet('ewj-feedback',fb);
+        applyFb(msg.path,msg.data,isPatch);
+        lsSet('ewj-feedback',state.feedback);
         mergeFeedbackIntoRecords();
-        if(state.tab==='log')renderLog();
+        if(state.tab==='log')renderLater(renderLog);
         else renderTabBar();
       } catch(err){}
-    });
+    };
+    es.addEventListener('put', onMsg(false));
+    es.addEventListener('patch', onMsg(true));
     return es;
   };
   try {
@@ -3876,7 +3920,7 @@ async function refreshAfterWake(){
       mergeFeedbackIntoRecords();
     }
     await refreshSchedule();
-    renderAll();
+    renderLater(renderAll);
   }catch(e){ console.warn('Catch-up after waking failed:',e.message); }
 }
 
@@ -4258,6 +4302,29 @@ function renderCourse(){
     +'Changes made from now on are stamped with the date; ones made before this tab existed show as “date not recorded”.';
   wrap.appendChild(note);
 }
+
+// ── Never redraw under someone's fingers ──────────────────────────────────
+// Live updates (a colleague saving, John sending feedback, the 5-minute check)
+// used to redraw the whole tab at once. A teacher typing a comment lost the box
+// mid-word, again and again: that is the "lag". Now a redraw that nobody asked
+// for waits until they leave the box, and then happens once.
+let _laterRender=null;
+function isTyping(){
+  const a=document.activeElement;
+  if(!a) return false;
+  const tag=(a.tagName||'').toLowerCase();
+  return (tag==='textarea'||(tag==='input'&&!/^(button|checkbox|radio|submit|date|time)$/i.test(a.type||'')))
+    && !!a.closest && !!a.closest('#app');
+}
+function renderLater(fn){
+  if(isTyping()){ _laterRender=fn; return; }
+  _laterRender=null; fn();
+}
+document.addEventListener('focusout',()=>{
+  // Wait a tick: if focus moved straight to another box (or a button about to
+  // redraw anyway), let that happen first.
+  setTimeout(()=>{ if(_laterRender && !isTyping()){ const fn=_laterRender; _laterRender=null; fn(); } },60);
+});
 
 function renderAll(){
   renderTeacherChips();
