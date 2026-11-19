@@ -1332,7 +1332,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v19.0</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v19.1</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -1377,7 +1377,7 @@ function renderTabBar(){
   const bar=document.getElementById('tab-bar');
   bar.innerHTML='';
   const pending=state.records.filter(r=>needsComment(r)&&(!state.activeTeacher||r.teacher===state.activeTeacher)).length;
-  const unreadFeedback=state.activeTeacher?state.records.filter(r=>r.teacher===state.activeTeacher&&r.adminFeedback&&!r.adminFeedbackRead).length:0;
+  const unreadFeedback=state.activeTeacher?state.records.filter(r=>r.teacher===state.activeTeacher&&r.adminFeedback&&(!r.adminFeedbackRead||r.johnUnread)).length:0;
   const histLabel='History'+(pending>0?' ('+pending+')':(unreadFeedback>0?' 📬'+unreadFeedback:''));
   const unreadMsg=state.activeTeacher?
       (state.messages||[]).filter(m=>m.to===state.activeTeacher&&!m.read).length +
@@ -1649,6 +1649,20 @@ function renderRegister(){
   const slots=getSlots();
   const slot=reg.slotIdx!==null?slots[reg.slotIdx]:null;
   const day=getDay(reg.dateVal),dateStr=getDateStr(reg.dateVal),week=getWeek(reg.dateVal);
+
+  // John answered something this teacher wrote: say so where they land, every time,
+  // until they have opened it.
+  if(state.activeTeacher){
+    const waiting=state.records.filter(r=>r.teacher===state.activeTeacher&&r.johnUnread);
+    if(waiting.length){
+      const b=document.createElement('button');
+      b.style.cssText='display:block;width:100%;text-align:left;background:#eef2ff;border:1.5px solid #a5b4fc;border-radius:10px;padding:11px 14px;margin-bottom:12px;font-size:13.5px;font-family:inherit;color:#3730a3;cursor:pointer;';
+      b.innerHTML='&#128236; <b>John has answered you'+(waiting.length>1?' ('+waiting.length+')':'')+'.</b> '
+        +escHtml(waiting.map(r=>r.course+' '+r.date).join(', '))+' &rarr; tap to read';
+      b.onclick=()=>{ state.tab='log'; logState.filterWeek=''; logState.filterDay=''; logState.search=''; logState.filterNoComment=false; renderAll(); };
+      wrap.appendChild(b);
+    }
+  }
 
   // Success screen
   if(reg.submitted&&slot){
@@ -2177,11 +2191,13 @@ function renderLog(){
   // A teacher's History used to draw every lesson of the course (150+ cards) on
   // every redraw, which is slow on an older laptop or a phone. The newest 40 come
   // first; older ones are one tap away. Searching and filters still see them all.
+  // Lessons where John has answered and the teacher has not read it yet come first.
+  if(at){ const top=recs.filter(r=>r.johnUnread); if(top.length) recs=top.concat(recs.filter(r=>!r.johnUnread)); }
   let olderCount=0;
   if(at && !logState.search.trim() && !logState.filterWeek && !logState.filterDay && !logState.filterNoComment){
     const keep=recs.slice(0, logState.show);
     const open=[logState.editing, logState.expanded, logState.editingStudents].filter(Boolean);
-    recs.slice(logState.show).forEach(r=>{ if(open.some(id=>String(id)===String(r.id))) keep.push(r); });
+    recs.slice(logState.show).forEach(r=>{ if(open.some(id=>String(id)===String(r.id))||r.johnUnread) keep.push(r); });
     olderCount=recs.length-keep.length;
     recs=keep;
   }
@@ -2236,8 +2252,24 @@ function renderLog(){
             const isUnread=!r.teacherReplyRead;
             trDiv.innerHTML='<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#15803d;margin-right:5px;">'+(isUnread?'&#128236; ':'')+'Reply from '+r.teacher+'</span><span style="color:#14532d">'+r.teacherReply+'</span>'+(r.teacherReplyAt?'<span style="font-size:10px;color:#94a3b8;display:block;margin-top:2px;">'+r.teacherReplyAt+'</span>':'');
             fbWrap.appendChild(trDiv);
-            // Mark reply as read
-            if(isUnread){const upd={...r,teacherReplyRead:true};state.records=state.records.map(rec=>rec.id===r.id?upd:rec);lsSet('ewj-records',state.records);fetch(FB_URL+'/records/r'+r.id+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(upd)}).catch(()=>{});}
+            // Mark reply as read (only that flag, in /feedback)
+            if(isUnread) markFeedbackFlags(r.id,{teacherReplyRead:true});
+          }
+          // The rest of the conversation, and a box to answer the teacher
+          if(r.teacherReply){
+            const th=document.createElement('div'); th.style.cssText='margin:0 -13px 6px;'; th.innerHTML=threadHtml(r,'john'); fbWrap.appendChild(th);
+            const jr=document.createElement('div');jr.style.cssText='display:flex;gap:7px;align-items:center;margin-bottom:8px;';
+            const jIn=document.createElement('input');jIn.type='text';jIn.style.cssText='flex:1;padding:6px 9px;border:1.5px solid #86efac;border-radius:7px;font-size:12px;font-family:inherit;outline:none;background:#fff;';
+            jIn.placeholder='Answer '+r.teacher+'…';
+            const jBtn=document.createElement('button');jBtn.style.cssText='border:none;border-radius:7px;background:#15803d;color:#fff;padding:6px 12px;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;white-space:nowrap;';
+            jBtn.textContent='Answer';
+            jBtn.onclick=async()=>{
+              const val=jIn.value.trim(); if(!val) return;
+              jBtn.disabled=true; jBtn.textContent='Sending…';
+              try{ await addToThread(r.id,'john',val); renderLog(); }
+              catch(e){ jBtn.disabled=false; jBtn.textContent='Answer'; alert('Not sent: '+e.message+'. Try again in a moment.'); }
+            };
+            jr.appendChild(jIn);jr.appendChild(jBtn);fbWrap.appendChild(jr);
           }
         }
         const fbRow=document.createElement('div');fbRow.style.cssText='display:flex;gap:7px;align-items:center;';
@@ -2248,7 +2280,9 @@ function renderLog(){
         fbBtn.onclick=async()=>{
   const val=fbIn.value.trim();if(!val)return;
   const now=new Date();
-  const fbData={adminFeedback:val,adminFeedbackAt:fmtD(now)+' '+fmtT(now),adminFeedbackRead:false,teacherReply:r.teacherReply||'',teacherReplyAt:r.teacherReplyAt||null,teacherReplyRead:r.teacherReplyRead||false};
+  const existing=state.feedback&&state.feedback[r.id]?state.feedback[r.id]:{};
+  // Everything already there (the teacher's reply, the conversation) stays.
+  const fbData={...existing,adminFeedback:val,adminFeedbackAt:fmtD(now)+' '+fmtT(now),adminFeedbackRead:false,teacherReply:existing.teacherReply||r.teacherReply||'',teacherReplyAt:existing.teacherReplyAt||r.teacherReplyAt||null,teacherReplyRead:existing.teacherReplyRead||r.teacherReplyRead||false};
   // Save feedback to SEPARATE path — never touches records
   await saveFeedback(r.id, fbData);
   // Update local record display only
@@ -2259,28 +2293,37 @@ function renderLog(){
         card.appendChild(fbWrap);
       } else if(at_===r.teacher&&r.adminFeedback){
         // Teacher reads feedback and can reply
-        const isUnread=!r.adminFeedbackRead;
+        const isUnread=!r.adminFeedbackRead||!!r.johnUnread;
         const fbTeacher=document.createElement('div');
         fbTeacher.style.cssText='margin:0 13px 0;padding:8px 11px;background:'+(isUnread?'#eef2ff':'#f8fafc')+';border:1.5px solid '+(isUnread?'#c7d2fe':'#e2e8f0')+';border-radius:8px 8px 0 0;';
-        fbTeacher.innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:'+(isUnread?'#4f46e5':'#94a3b8')+';margin-bottom:4px;">'+(isUnread?'&#128236; New feedback from John':'&#128172; Feedback from John')+'</div>'+'<div style="font-size:13px;color:#1e293b;white-space:pre-wrap;">'+r.adminFeedback+'</div>'+(r.adminFeedbackAt?'<div style="font-size:10px;color:#94a3b8;margin-top:4px;">'+r.adminFeedbackAt+'</div>':'');
+        fbTeacher.innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:'+(isUnread?'#4f46e5':'#94a3b8')+';margin-bottom:4px;">'+(r.johnUnread?'&#128236; John answered your reply':(isUnread?'&#128236; New feedback from John':'&#128172; Feedback from John'))+'</div>'+'<div style="font-size:13px;color:#1e293b;white-space:pre-wrap;">'+r.adminFeedback+'</div>'+(r.adminFeedbackAt?'<div style="font-size:10px;color:#94a3b8;margin-top:4px;">'+r.adminFeedbackAt+'</div>':'');
         card.appendChild(fbTeacher);
         if(r.teacherReply){
           const replyDiv=document.createElement('div');
           replyDiv.style.cssText='margin:0 13px 0;padding:8px 11px;background:#f0fdf4;border:1.5px solid #86efac;border-top:none;border-radius:0;font-size:13px;';
           replyDiv.innerHTML='<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#15803d;margin-right:5px;">Your reply</span>'+r.teacherReply+(r.teacherReplyAt?'<div style="font-size:10px;color:#94a3b8;margin-top:3px;">'+r.teacherReplyAt+'</div>':'');
           card.appendChild(replyDiv);
+          const th=document.createElement('div'); th.innerHTML=threadHtml(r,'teacher'); card.appendChild(th);
         }
+        const hasThread=threadOf(r).length>0;
         const replyWrap=document.createElement('div');
         replyWrap.style.cssText='margin:0 13px 10px;display:flex;gap:0;border:1.5px solid '+(isUnread?'#c7d2fe':'#e2e8f0')+';border-top:none;border-radius:0 0 8px 8px;overflow:hidden;';
         const replyIn=document.createElement('input');replyIn.type='text';
         replyIn.style.cssText='flex:1;padding:7px 10px;border:none;outline:none;font-size:12px;font-family:inherit;background:#fff;';
-        replyIn.placeholder=r.teacherReply?'Update reply...':'Reply to John...';
-        replyIn.value=r.teacherReply||'';
+        // Once John has answered, the box adds a new message instead of rewriting the first one.
+        replyIn.placeholder=hasThread?'Reply to John...':(r.teacherReply?'Update reply...':'Reply to John...');
+        replyIn.value=hasThread?'':(r.teacherReply||'');
         const replyBtn=document.createElement('button');
         replyBtn.style.cssText='border:none;background:#15803d;color:#fff;padding:7px 13px;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;';
-        replyBtn.textContent=r.teacherReply?'Update':'Reply';
+        replyBtn.textContent=hasThread?'Reply':(r.teacherReply?'Update':'Reply');
         replyBtn.onclick=async()=>{
           const val=replyIn.value.trim();if(!val)return;
+          if(hasThread){
+            replyBtn.disabled=true; replyBtn.textContent='Sending…';
+            try{ await addToThread(r.id,'teacher',val); renderLog(); }
+            catch(e){ replyBtn.disabled=false; replyBtn.textContent='Reply'; alert('Not sent: '+e.message+'. Try again in a moment.'); }
+            return;
+          }
           const now=new Date();
           const existing=state.feedback&&state.feedback[r.id]?state.feedback[r.id]:{};
           const fbData={...existing,teacherReply:val,teacherReplyAt:fmtD(now)+' '+fmtT(now),teacherReplyRead:false};
@@ -2289,7 +2332,7 @@ function renderLog(){
           renderLog();
         };
         replyWrap.appendChild(replyIn);replyWrap.appendChild(replyBtn);card.appendChild(replyWrap);
-        if(isUnread){const upd={...r,adminFeedbackRead:true};state.records=state.records.map(rec=>rec.id===r.id?upd:rec);lsSet('ewj-records',state.records);fetch(FB_URL+'/records/r'+r.id+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(upd)}).catch(()=>{});}
+        if(isUnread) markFeedbackFlags(r.id,{adminFeedbackRead:true, johnUnread:false});
       }
     }
 
@@ -3808,6 +3851,59 @@ function renderMessages(){
 
 // ── Feedback stored separately from records ──────────────────────────────
 // This ensures feedback writes NEVER overwrite attendance records
+// ── The conversation under a piece of feedback ─────────────────────────────
+// John's feedback, the teacher's first reply (teacherReply), then any further
+// messages either way, kept one by one under /feedback/f<id>/thread. Each is
+// written on its own, never by rewriting the whole entry, so two people writing
+// at once cannot wipe each other.
+function threadOf(r){
+  const t=(r&&r.thread)||{};
+  return Object.keys(t).map(k=>Object.assign({key:k},t[k])).filter(m=>m&&m.text)
+    .sort((a,b)=>(a.ms||0)-(b.ms||0));
+}
+async function addToThread(recordId, from, text){
+  const now=new Date(), ms=now.getTime();
+  const entry={from:from, text:text, at:fmtD(now)+' '+fmtT(now), ms:ms};
+  const base=FB_URL+'/feedback/f'+recordId;
+  const res=await fetch(base+'/thread/t'+ms+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(entry)});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  // Who has something new to read.
+  const flags= from==='john'
+    ? {johnUnread:true, johnAt:entry.at}
+    : {teacherReplyAt:entry.at, teacherReplyRead:false};
+  const r2=await fetch(base+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(flags)});
+  if(!r2.ok) throw new Error('HTTP '+r2.status);
+  // And on this screen straight away.
+  state.feedback=state.feedback||{};
+  const cur=Object.assign({},state.feedback[recordId]||{recordId:recordId});
+  cur.thread=Object.assign({},cur.thread||{}); cur.thread['t'+ms]=entry;
+  Object.assign(cur,flags);
+  state.feedback[recordId]=cur;
+  lsSet('ewj-feedback',state.feedback);
+  mergeFeedbackIntoRecords();
+  return entry;
+}
+// Marking something as read touches only those flags in /feedback, never the
+// whole register (the old way rewrote the full record from this device's copy).
+function markFeedbackFlags(recordId, flags){
+  state.feedback=state.feedback||{};
+  state.feedback[recordId]=Object.assign({},state.feedback[recordId]||{recordId:recordId},flags);
+  lsSet('ewj-feedback',state.feedback);
+  state.records=state.records.map(rec=>rec.id===recordId?Object.assign({},rec,flags):rec);
+  lsSet('ewj-records',state.records);
+  fetch(FB_URL+'/feedback/f'+recordId+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(flags)}).catch(()=>{});
+}
+function threadHtml(r, viewer){
+  return threadOf(r).map(m=>{
+    const mine=(viewer==='john')===(m.from==='john');
+    const who=m.from==='john'?(viewer==='john'?'You':'John'):(viewer==='john'?r.teacher:'You');
+    const blue=m.from==='john';
+    return '<div style="margin:0 13px;padding:7px 11px;font-size:13px;border:1.5px solid '+(blue?'#c7d2fe':'#86efac')+';border-top:none;background:'+(blue?'#eef2ff':'#f0fdf4')+';white-space:pre-wrap;">'
+      +'<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:'+(blue?'#4f46e5':'#15803d')+';margin-right:5px;">'+escHtml(who)+'</span>'
+      +escHtml(m.text)+'<div style="font-size:10px;color:#94a3b8;margin-top:3px;">'+escHtml(m.at||'')+'</div></div>';
+  }).join('');
+}
+
 async function saveFeedback(recordId, feedbackData){
   acquireWriteLock();
   try {
@@ -3853,6 +3949,8 @@ function mergeFeedbackIntoRecords(){
       teacherReply:fb.teacherReply||r.teacherReply||'',
       teacherReplyAt:fb.teacherReplyAt||r.teacherReplyAt||null,
       teacherReplyRead:fb.teacherReplyRead!==undefined?fb.teacherReplyRead:r.teacherReplyRead,
+      thread:fb.thread||null,
+      johnUnread:!!fb.johnUnread,
     };
   });
 }
@@ -3884,7 +3982,13 @@ function fbSubscribe_feedback(){
         return;
       }
       if(!cur) return;   // a field of an entry we do not have yet: the next full load brings it
-      const next=Object.assign({},cur); next[parts[1]]=data;
+      const next=JSON.parse(JSON.stringify(cur));
+      let o=next;
+      for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=='object') o[parts[i]]={}; o=o[parts[i]]; }
+      const last=parts[parts.length-1];
+      if(data===null) delete o[last];
+      else if(isPatch&&o[last]&&typeof o[last]==='object'&&typeof data==='object') Object.assign(o[last],data);
+      else o[last]=data;
       state.feedback[cur.recordId||rid]=next;
     };
     const onMsg=isPatch=>e=>{
