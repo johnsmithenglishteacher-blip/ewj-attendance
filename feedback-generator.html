@@ -83,6 +83,12 @@
     <div id="askList"></div>
   </div>
 
+  <div id="replySection" style="display:none;background:#fff;border:1.5px solid #bbf7d0;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
+    <div id="replyTitle" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#15803d;margin-bottom:4px;">Replies from teachers</div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:10px;">What teachers wrote back to your feedback in the last 7 days, newest first.</div>
+    <div id="replyList"></div>
+  </div>
+
   <div class="controls">
     <select id="filterTeacher" class="filter" onchange="renderList()">
       <option value="">All teachers</option>
@@ -894,6 +900,7 @@ function openQuestions(){
     .sort((a, b) => String(a.teacher).localeCompare(String(b.teacher)) || ((Number(a.recordId) || 0) - (Number(b.recordId) || 0)));
 }
 function renderAskList(){
+  try { renderReplies(); } catch(e) { console.warn('Replies could not be drawn:', e.message); }
   const sec = document.getElementById('askSection');
   const list = document.getElementById('askList');
   if (!sec || !list) return;
@@ -927,6 +934,40 @@ function renderAskList(){
   if (doneCount) html += '<div style="font-size:11.5px;color:#94a3b8;margin-top:8px;">' + doneCount + ' answered so far.</div>';
   list.innerHTML = html;
 }
+// ── Replies from teachers ──
+// A teacher answers in the reply box under your feedback in the register. Those
+// answers used to sit there until you happened to scroll past them.
+const REPLY_DAYS = 7;
+function recentReplies(){
+  const from = Date.now() - REPLY_DAYS * 86400000;
+  return records.map(r => {
+    const f = feedback[r.id] || feedback[String(r.id)] || {};
+    const reply = f.teacherReply || r.teacherReply || '';
+    const at = f.teacherReplyAt || r.teacherReplyAt || '';
+    return { r: r, reply: String(reply).trim(), at: at, stamp: fbStamp(at), msg: f.adminFeedback || r.adminFeedback || '' };
+  }).filter(x => x.reply && x.stamp && x.stamp >= from - 86400000 && x.r.teacher !== 'John')
+    .sort((a, b) => b.stamp - a.stamp || (Number(b.r.id) - Number(a.r.id)));
+}
+function renderReplies(){
+  const sec = document.getElementById('replySection'), list = document.getElementById('replyList');
+  if (!sec || !list) return;
+  const items = recentReplies();
+  if (!items.length) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  document.getElementById('replyTitle').textContent = 'Replies from teachers (' + items.length + ')';
+  list.innerHTML = items.map(x => {
+    const slot = [x.r.day, x.r.time].filter(Boolean).join(' ');
+    const qs = questionsIn(x.msg);
+    const asked = qs.length ? qs.join(' ') : (x.msg.length > 160 ? x.msg.slice(0, 157) + '…' : x.msg);
+    return '<div style="padding:8px 0;border-top:1px solid #dcfce7;">'
+      + '<div style="font-weight:700;font-size:13.5px;">' + escQ(x.r.teacher) + ' <span style="font-weight:400;color:#64748b;font-size:12px;">'
+      +   escQ((x.r.course || '') + (slot ? ', ' + slot : '') + ', lesson of ' + (x.r.date || '') + ' · replied ' + String(x.at).split(' ')[0]) + '</span></div>'
+      + '<div style="font-size:12.5px;color:#64748b;margin-top:3px;line-height:1.45;"><b>You:</b> ' + escQ(asked) + '</div>'
+      + '<div style="font-size:13.5px;color:#14532d;background:#f0fdf4;border-radius:6px;padding:5px 9px;margin-top:4px;line-height:1.5;"><b>' + escQ(x.r.teacher) + ':</b> ' + escQ(x.reply) + '</div>'
+      + '</div>';
+  }).join('');
+}
+
 function askListText(){
   let out = 'Questions to follow up\n', current = null;
   openQuestions().forEach(q => {
@@ -969,9 +1010,10 @@ async function saveFeedback(id) {
     adminFeedback: text,
     adminFeedbackAt: dateStr + ' ' + timeStr,
     adminFeedbackRead: false,
-    teacherReply: '',
-    teacherReplyAt: null,
-    teacherReplyRead: false
+    // Editing your message must not wipe what the teacher already answered.
+    teacherReply: (feedback[id] && feedback[id].teacherReply) || r.teacherReply || '',
+    teacherReplyAt: (feedback[id] && feedback[id].teacherReplyAt) || r.teacherReplyAt || null,
+    teacherReplyRead: (feedback[id] && feedback[id].teacherReplyRead) || false
   };
 
   try {
