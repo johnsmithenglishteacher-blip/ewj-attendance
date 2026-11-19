@@ -258,7 +258,7 @@ async function loadRecords() {
     // overdue one there is — it used to be dropped from this list for ever the
     // moment a reminder went out, so the lessons that most needed chasing were
     // the only ones John could not see. They stay now, marked as already chased.
-    missingCommentRecs = allRecs.filter(r => !hasRealComment(r) && r.teacher !== 'John');
+    missingCommentRecs = allRecs.filter(r => !hasRealComment(r) && r.teacher !== 'John' && !r.commentWaived);
     feedback = {};
     if (fData) Object.values(fData).forEach(f => { if (f && f.recordId) feedback[f.recordId] = f; });
     records.forEach(r => {
@@ -1235,9 +1235,34 @@ function renderMissingList() {
       })() +
       (saved ? '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:8px 10px;font-size:13px;color:#15803d;margin-bottom:8px;">✅ Reminder sent just now: ' + saved + '</div>' : '') +
       '<textarea id="nudge-' + r.id + '" style="width:100%;padding:8px 10px;border:1.5px solid #ede9fe;border-radius:8px;font-size:13px;font-family:inherit;resize:none;min-height:72px;outline:none;display:block;margin-bottom:8px;" placeholder="Write a reminder to ' + r.teacher + '…">' + (saved || defaultMsg) + '</textarea>' +
-      '<button class="btn" style="background:#7c3aed;color:#fff;" onclick="sendNudge(\'' + r.id + '\', \'' + r.teacher + '\')">💬 Send reminder to ' + r.teacher + '</button>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+      + '<button class="btn" style="background:#7c3aed;color:#fff;" onclick="sendNudge(\'' + r.id + '\', \'' + r.teacher + '\')">💬 Send reminder to ' + r.teacher + '</button>'
+      + '<button class="btn" id="waive-' + r.id + '" style="background:#fff;color:#64748b;border:1.5px solid #e2e8f0;" onclick="waiveComment(\'' + r.id + '\')">✕ No comment needed</button>'
+      + '</div>' +
       '</div>';
   }).join('');
+}
+
+// Some lessons will never get a comment and should not be chased any more (an old
+// lesson, a cover, a register made by mistake). This marks just that one register
+// as "no comment needed": the lesson, its attendance and everything else stay.
+async function waiveComment(recordId) {
+  const btn = document.getElementById('waive-' + recordId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Removing…'; }
+  try {
+    // Never write to a register that is not there: that would create an empty one.
+    const chk = await fetch(FB_URL() + '/records/r' + recordId + '/id.json', { cache: 'no-store' });
+    const exists = chk.ok ? await chk.json() : null;
+    if (!exists) throw new Error('that register could not be found');
+    const res = await fetch(FB_URL() + '/records/r' + recordId + '.json', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commentWaived: true }) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    missingCommentRecs = missingCommentRecs.filter(r => String(r.id) !== String(recordId));
+    renderMissingList(); updateStats();
+    log('Removed from the list. That lesson will not be chased again.');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '✕ No comment needed'; }
+    log('Could not remove it: ' + e.message + '. Nothing was changed.');
+  }
 }
 
 async function sendNudge(recordId, teacher) {

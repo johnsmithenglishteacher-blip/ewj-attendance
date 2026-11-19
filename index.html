@@ -1953,6 +1953,7 @@ function hasRealComment(r){
 }
 function needsComment(r){
   if(!r || NO_COMMENT_CHASE.includes(r.teacher)) return false;
+  if(r.commentWaived) return false;   // John marked it 'no comment needed'
   // A placeholder is not a comment, whatever the flag on the record says.
   if(isPlaceholderComment(r.comment)) return true;
   return !r.commentDone;

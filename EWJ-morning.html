@@ -1254,7 +1254,7 @@ async function genCoachingReport(teacher, weekRecs){
   const tr = weekRecs.filter(r => r.teacher === teacher);
   const rate = attendanceRate(tr);
   const withComments = tr.filter(r => hasRealComment(r));
-  const noComment = tr.filter(r => !hasRealComment(r));
+  const noComment = tr.filter(r => !hasRealComment(r) && !r.commentWaived);
 
   if (!tr.length) return null;
 
