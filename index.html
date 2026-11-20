@@ -1332,7 +1332,7 @@ function buildAppShell(){
     +'<div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">&#128203;</div>'
     +'<div style="flex:1;">'
     +'<div style="font-size:16px;font-weight:700;">Attendance Register</div>'
-    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v19.1</span></div>'
+    +'<div style="font-size:11px;color:var(--gray-400);">English with John &middot; 2026&#8211;27 &nbsp;<span style="color:#86efac;font-size:10px;">v19.2</span></div>'
     +'</div>'
     +'<span id="flash" style="font-size:12px;color:var(--green);font-weight:600;display:none;"></span>'
     +'<span id="live-dot" style="font-size:11px;color:#94a3b8;display:none;">&#9679; Live</span>'
@@ -1361,9 +1361,12 @@ function renderTeacherChips(){
     b.textContent=t||'All (admin)';
     b.onclick=()=>{
       if(t===''){
+        state.preview=false;
         if(state.activeTeacher===''||isAdminSessionActive()){ saveTeacher('');renderAll();return; }
         promptAdminAccess(()=>{ saveTeacher('');renderAll(); });
       } else {
+        // Coming from admin = John looking as this teacher: nothing gets marked as read.
+        state.preview=(state.activeTeacher==='');
         if(state.activeTeacher==='') clearAdminSession();
         saveTeacher(t);renderAll();
       }
@@ -1377,7 +1380,7 @@ function renderTabBar(){
   const bar=document.getElementById('tab-bar');
   bar.innerHTML='';
   const pending=state.records.filter(r=>needsComment(r)&&(!state.activeTeacher||r.teacher===state.activeTeacher)).length;
-  const unreadFeedback=state.activeTeacher?state.records.filter(r=>r.teacher===state.activeTeacher&&r.adminFeedback&&(!r.adminFeedbackRead||r.johnUnread)).length:0;
+  const unreadFeedback=state.activeTeacher?state.records.filter(r=>r.teacher===state.activeTeacher&&fbIsNew(r)).length:0;
   const histLabel='History'+(pending>0?' ('+pending+')':(unreadFeedback>0?' 📬'+unreadFeedback:''));
   const unreadMsg=state.activeTeacher?
       (state.messages||[]).filter(m=>m.to===state.activeTeacher&&!m.read).length +
@@ -2244,7 +2247,7 @@ function renderLog(){
         const fbWrap=document.createElement('div');fbWrap.style.cssText='padding:6px 13px 10px;background:#f8fafc;border-top:1px solid #f1f5f9;';
         if(r.adminFeedback){
           const fbDisp=document.createElement('div');fbDisp.style.cssText='font-size:12px;color:#4f46e5;margin-bottom:6px;padding:6px 9px;background:#eef2ff;border-radius:7px;';
-          fbDisp.innerHTML='<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;margin-right:5px;">Your feedback</span><span style="color:#3730a3;white-space:pre-wrap;">'+r.adminFeedback+'</span>'+(r.adminFeedbackAt?'<span style="font-size:10px;color:#94a3b8;display:block;margin-top:2px;">'+r.adminFeedbackAt+'</span>':'');
+          fbDisp.innerHTML='<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;margin-right:5px;">Your feedback</span><span style="color:#3730a3;white-space:pre-wrap;">'+r.adminFeedback+'</span>'+(r.adminFeedbackAt?'<span style="font-size:10px;color:#94a3b8;display:block;margin-top:2px;">'+r.adminFeedbackAt+seenMark(r.adminFeedbackRead,r.teacher)+'</span>':'');
           fbWrap.appendChild(fbDisp);
           // Show teacher reply if any
           if(r.teacherReply){
@@ -2258,7 +2261,11 @@ function renderLog(){
           }
           // The rest of the conversation, and a box to answer the teacher
           if(r.teacherReply){
-            const th=document.createElement('div'); th.style.cssText='margin:0 -13px 6px;'; th.innerHTML=threadHtml(r,'john'); fbWrap.appendChild(th);
+            const th=document.createElement('div'); th.style.cssText='margin:0 -13px 6px;'; th.innerHTML=threadHtml(r,'john');
+            // Has the teacher opened your last answer?
+            const lastJ=threadOf(r).filter(m=>m.from==='john').pop();
+            if(lastJ) th.innerHTML+='<div style="margin:0 13px;font-size:10px;color:#94a3b8;text-align:right;">Your answer'+seenMark(!r.johnUnread,r.teacher)+'</div>';
+            fbWrap.appendChild(th);
             const jr=document.createElement('div');jr.style.cssText='display:flex;gap:7px;align-items:center;margin-bottom:8px;';
             const jIn=document.createElement('input');jIn.type='text';jIn.style.cssText='flex:1;padding:6px 9px;border:1.5px solid #86efac;border-radius:7px;font-size:12px;font-family:inherit;outline:none;background:#fff;';
             jIn.placeholder='Answer '+r.teacher+'…';
@@ -2294,7 +2301,7 @@ function renderLog(){
         card.appendChild(fbWrap);
       } else if(at_===r.teacher&&r.adminFeedback){
         // Teacher reads feedback and can reply
-        const isUnread=!r.adminFeedbackRead||!!r.johnUnread;
+        const isUnread=fbIsNew(r);
         const fbTeacher=document.createElement('div');
         fbTeacher.style.cssText='margin:0 13px 0;padding:8px 11px;background:'+(isUnread?'#eef2ff':'#f8fafc')+';border:1.5px solid '+(isUnread?'#c7d2fe':'#e2e8f0')+';border-radius:8px 8px 0 0;';
         fbTeacher.innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:'+(isUnread?'#4f46e5':'#94a3b8')+';margin-bottom:4px;">'+(r.johnUnread?'&#128236; John answered your reply':(isUnread?'&#128236; New feedback from John':'&#128172; Feedback from John'))+'</div>'+'<div style="font-size:13px;color:#1e293b;white-space:pre-wrap;">'+r.adminFeedback+'</div>'+(r.adminFeedbackAt?'<div style="font-size:10px;color:#94a3b8;margin-top:4px;">'+r.adminFeedbackAt+'</div>':'');
@@ -2333,7 +2340,7 @@ function renderLog(){
           renderLog();
         };
         replyWrap.appendChild(replyIn);replyWrap.appendChild(replyBtn);card.appendChild(replyWrap);
-        if(isUnread) markFeedbackFlags(r.id,{adminFeedbackRead:true, johnUnread:false});
+        if(isUnread&&!state.preview) markFeedbackFlags(r.id,{adminFeedbackRead:true, johnUnread:false});
       }
     }
 
@@ -3894,6 +3901,11 @@ function markFeedbackFlags(recordId, flags){
   lsSet('ewj-records',state.records);
   fetch(FB_URL+'/feedback/f'+recordId+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(flags)}).catch(()=>{});
 }
+function seenMark(seen, who){
+  return seen
+    ? ' &middot; <span style="color:#15803d;font-weight:700;">&#10003; Seen by '+escHtml(who||'')+'</span>'
+    : ' &middot; <span style="color:#b45309;font-weight:700;">Not opened yet</span>';
+}
 function threadHtml(r, viewer){
   return threadOf(r).map(m=>{
     const mine=(viewer==='john')===(m.from==='john');
@@ -3938,6 +3950,23 @@ async function loadFeedback(){
   } catch(e){ state.feedback=lsGet('ewj-feedback',{}); }
 }
 
+// Until v19.1 a teacher's "read" was saved on the register, not with the feedback,
+// so old feedback always looked unread (Mary saw 📬160). For feedback written
+// before 21/11/2026 either place counts; after that, only the feedback entry.
+const READ_MOVED=new Date(2026,10,21).getTime();
+function dmyMs(s){
+  const m=String(s||'').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2}))?/);
+  return m?new Date(+m[3],+m[2]-1,+m[1],m[4]!=null?+m[4]:12,m[5]!=null?+m[5]:0).getTime():0;
+}
+// Something new from John for the teacher: an answer she hasn't opened, or
+// feedback from the last 14 days she hasn't opened. Older ones never nag.
+function fbIsNew(r){
+  if(!r||!r.adminFeedback) return false;
+  if(r.johnUnread) return true;
+  if(r.adminFeedbackRead) return false;
+  const t=dmyMs(r.adminFeedbackAt);
+  return !!t&&t>=Date.now()-14*86400000;
+}
 function mergeFeedbackIntoRecords(){
   if(!state.feedback)return;
   state.records=state.records.map(r=>{
@@ -3946,7 +3975,7 @@ function mergeFeedbackIntoRecords(){
     return{...r,
       adminFeedback:fb.adminFeedback||r.adminFeedback||'',
       adminFeedbackAt:fb.adminFeedbackAt||r.adminFeedbackAt||null,
-      adminFeedbackRead:fb.adminFeedbackRead!==undefined?fb.adminFeedbackRead:r.adminFeedbackRead,
+      adminFeedbackRead:fb.adminFeedbackRead===true||(r.adminFeedbackRead===true&&(dmyMs(fb.adminFeedbackAt||r.adminFeedbackAt)||0)<READ_MOVED)||(fb.adminFeedbackRead===undefined&&!!r.adminFeedbackRead),
       teacherReply:fb.teacherReply||r.teacherReply||'',
       teacherReplyAt:fb.teacherReplyAt||r.teacherReplyAt||null,
       teacherReplyRead:fb.teacherReplyRead!==undefined?fb.teacherReplyRead:r.teacherReplyRead,
