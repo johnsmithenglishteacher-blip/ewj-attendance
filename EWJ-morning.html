@@ -219,7 +219,7 @@ input[type=date]{border:1px solid #ddd;border-radius:7px;padding:5px 9px;font-si
   <div class="morning-banner">
     <div>
       <div class="greet" id="greetMsg">Good morning, John</div>
-      <div class="greet-sub" id="greetSub">Loading yesterday's data…</div>
+      <div class="greet-sub" id="greetSub">Loading the latest registers…</div>
     </div>
     <div class="banner-pills" id="bannerPills"></div>
   </div>
@@ -356,7 +356,7 @@ function dateKeyFromRecDate(s){
 function absents(recs){return recs.flatMap(r=>(r.students||[]).filter(s=>s.status==='absent').map(s=>({name:s.name,cls:r.course||r.className||r.group||'',teacher:r.teacher,date:r.date})));}
 function lates(recs){return recs.flatMap(r=>(r.students||[]).filter(s=>s.status==='late').map(s=>({name:s.name,cls:r.course||r.className||r.group||'',teacher:r.teacher})));}
 
-async function fetchFB(path){const r=await fetch(`${FB}/${path}.json`);if(!r.ok)throw new Error(r.status);return r.json();}
+async function fetchFB(path){const r=await Promise.race([fetch(`${FB}/${path}.json`,{cache:'no-store'}),new Promise((_,rej)=>setTimeout(()=>rej(new Error(path+' took longer than 25s')),25000))]);if(!r.ok)throw new Error(r.status);return r.json();}
 // ── Loading the registers without one giant download ──────────────────────────
 // /records.json in one request has grown past what a browser will reliably pull
 // down: it ran past 60 seconds and failed. But ?shallow=true returns only the
@@ -410,7 +410,11 @@ async function fetchRecordsPaged(base, fromMs, onProgress){
 
 const MORNING_FROM = new Date(2026,7,31,0,0,0).getTime();
 async function fetchRecentRecords(){
-  return await fetchRecordsPaged(FB, MORNING_FROM, m=>console.log('[registers]',m));
+  // Show the progress in the banner, so a long load never looks stuck.
+  return await fetchRecordsPaged(FB, MORNING_FROM, m=>{
+    console.log('[registers]',m);
+    const el=document.getElementById('greetSub'); if(el) el.textContent='Loading the registers… '+m;
+  });
 }
 
 async function loadAll(){
@@ -1104,7 +1108,13 @@ async function refreshAll(){
 
 function buildReports(){
   var picker=document.getElementById('datePicker');
+  // Yesterday, or the last day that had classes: on a Sunday or a Monday that
+  // is Friday, not an empty weekend day.
   var y=new Date();y.setDate(y.getDate()-1);
+  if(!picker.value){
+    var back=new Date(y);
+    for(var i=0;i<7;i++){ if(getDateRecs(fmt(back)).length){ y=back; break; } back.setDate(back.getDate()-1); }
+  }
   reportDate=picker.value||fmt(y);picker.value=reportDate;
   var d=new Date(reportDate+'T12:00:00');
   var wrange=getWeekRange(d);
